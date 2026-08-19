@@ -73,8 +73,8 @@ The ADK entrypoint is `app/agent.py`. The direct Gemini goal endpoint is impleme
 ## 1. Clone and enter the project
 
 ```bash
-git clone <YOUR_AGENTPROOF_REPO_URL>
-cd AgentProof
+git clone https://github.com/safal207/safal207-AgentProof-AI.git
+cd safal207-AgentProof-AI
 ```
 
 ## 2. Create a virtual environment
