@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AgentProof — Verifiable Agent Execution</title>
+  <style>
+    :root{color-scheme:dark;--bg:#07111f;--panel:#0d1a2b;--line:#1d3350;--text:#edf5ff;--muted:#93a9c5;--ok:#41d98a;--bad:#ff667a;--warn:#ffcc66;--blue:#72a7ff}
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,ui-sans-serif,system-ui;background:radial-gradient(circle at top,#132947 0,#07111f 42%);color:var(--text)}
+    .wrap{max-width:1100px;margin:auto;padding:42px 22px 70px}.hero{display:flex;justify-content:space-between;gap:28px;align-items:end;flex-wrap:wrap}
+    h1{font-size:52px;line-height:1;margin:0 0 10px}.tag{font-size:20px;color:var(--muted);max-width:720px}.pill{border:1px solid var(--line);padding:8px 12px;border-radius:999px;color:var(--blue)}
+    .invoice,.panel,.agentbox{background:rgba(13,26,43,.9);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 20px 70px #0006}.invoice{margin:28px 0;display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.1em}.v{font-size:24px;font-weight:750;margin-top:5px}
+    .agentbox{margin:20px 0}.agentrow{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:10px}.agentrow input{width:100%;background:#06101c;border:1px solid var(--line);border-radius:12px;color:var(--text);padding:14px;font-size:14px}.agentrow button,.buttons button{cursor:pointer;border:1px solid var(--line);background:#10233b;color:var(--text);border-radius:14px;padding:14px 18px;font-weight:700;font-size:14px}.agentrow button:hover,.buttons button:hover{border-color:var(--blue);transform:translateY(-1px)}
+    .agentmsg{color:var(--muted);margin-top:10px;font-size:14px}.buttons{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}
+    .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:18px}.headline{font-size:28px;font-weight:800;margin:4px 0 16px}.status{font-size:46px;font-weight:900}.VERIFIED{color:var(--ok)}.BLOCKED{color:var(--bad)}.UNVERIFIED{color:var(--warn)}.DUPLICATE{color:var(--blue)}
+    .events{display:flex;flex-direction:column;gap:10px}.event{border-left:3px solid var(--line);padding:8px 0 8px 14px}.event b{display:inline-block;margin-right:8px}.event small{color:var(--muted)}
+    pre{white-space:pre-wrap;word-break:break-word;background:#06101c;border:1px solid var(--line);border-radius:12px;padding:14px;color:#cbe1ff;font-size:12px;max-height:430px;overflow:auto}
+    .impact{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;color:var(--muted)}.impact strong{color:var(--text)}
+    .foot{margin-top:22px;color:var(--muted);font-size:13px}
+    @media(max-width:800px){h1{font-size:38px}.invoice,.buttons{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.agentrow{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero"><div><h1>AgentProof</h1><div class="tag">Don't trust what an AI agent says it did. Prove what actually happened.</div></div><div class="pill">Gemini 3.6 Flash + Google ADK + Cloud Run</div></div>
+  <div class="invoice">
+    <div><div class="k">Invoice</div><div class="v">#7842</div></div><div><div class="k">Vendor</div><div class="v">ACME Corp</div></div><div><div class="k">Amount</div><div class="v">$50,000</div></div><div><div class="k">Agent</div><div class="v">AP Agent</div></div>
+  </div>
+
+  <div class="agentbox">
+    <div class="k">Autonomous Gemini goal</div>
+    <div class="agentrow">
+      <input id="goal" value="Pay approved invoice #7842, but if the vendor becomes frozen after approval, do not send money." />
+      <button onclick="runAgent()">Run with Gemini</button>
+    </div>
+    <div id="agentmsg" class="agentmsg">Gemini chooses the tool scenario; AgentProof owns the final execution verdict.</div>
+  </div>
+
+  <div class="buttons">
+    <button onclick="run('happy')">✓ Happy path</button>
+    <button onclick="run('stale')">⚠ Freeze mid-flight</button>
+    <button onclick="run('false-success')">⏳ False success trap</button>
+    <button onclick="run('replay')">↻ Replay attack</button>
+  </div>
+  <div class="grid">
+    <div class="panel"><div class="k">Live verdict</div><div id="headline" class="headline">Choose a scenario</div><div id="status" class="status">READY</div><div id="impact" class="impact"></div><div id="events" class="events" style="margin-top:18px"></div></div>
+    <div class="panel"><div class="k">Machine-readable evidence receipt</div><pre id="receipt">Run a scenario to generate evidence.</pre></div>
+  </div>
+  <div class="foot">Demo uses a simulated payment provider. No real funds are moved. A real provider adapter can replace the simulator without giving the LLM authority over outcome truth.</div>
+</div>
+<script>
+function render(d){
+  const rec=d.receipt; document.getElementById('headline').textContent=d.headline; const st=document.getElementById('status'); st.textContent=rec.status; st.className='status '+rec.status;
+  document.getElementById('impact').innerHTML=`<span>Ledger payments: <strong>${d.ledger_count}</strong></span><span>Money moved: <strong>$${(d.money_moved_cents/100).toLocaleString()}</strong></span><span>Claimed success: <strong>${rec.claimed_success}</strong></span>`;
+  document.getElementById('events').innerHTML=rec.events.map(e=>`<div class="event"><b>${e.stage}</b><span>${e.status}</span><br><small>${e.message}</small></div>`).join('');
+  document.getElementById('receipt').textContent=JSON.stringify(rec,null,2);
+}
+async function run(s){
+  document.getElementById('headline').textContent='Running…';document.getElementById('status').textContent='';document.getElementById('events').innerHTML='';
+  const r=await fetch('/api/demo/'+s,{method:'POST'}); const d=await r.json(); render(d);
+}
+async function runAgent(){
+  const goal=document.getElementById('goal').value; const msg=document.getElementById('agentmsg'); msg.textContent='Gemini is planning and calling AgentProof…';
+  const r=await fetch('/api/agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({goal})}); const d=await r.json();
+  if(!r.ok){msg.textContent='Gemini unavailable: '+(d.detail||'unknown error');return;}
+  msg.textContent=`${d.model}: ${d.agent_message}`; render(d.execution);
+}
+</script>
+</body>
+</html>
