@@ -2,14 +2,26 @@
 
 > **Don't trust what an AI agent says it did. Prove what actually happened.**
 
-AgentProof is a verification runtime for autonomous AI agents that perform high-value actions. The hackathon demo uses a **simulated $50,000 vendor payment** to prove failure classes that ordinary agent workflows can mishandle:
+## Problem
+
+Autonomous AI agents are moving from conversation into execution — but an agent that *plans* an action correctly can still *execute* it wrongly. Four failure classes are invisible to ordinary agent frameworks and to the LLM itself:
 
 1. **Stale authorization** — policy changes after planning but before execution.
 2. **Action drift** — the action is mutated after authorization.
 3. **False success** — an external API accepts a request, but the expected real-world state transition never occurs.
 4. **Replay / duplicate execution** — the same action is dispatched again, including concurrent retries.
 
-No real funds are moved by this repository.
+## Value proposition
+
+AgentProof lets an agent act autonomously while independently proving:
+
+- the action was authorized,
+- the authorization was still fresh at the execution seam,
+- the executed action matched the authorized action,
+- the real-world state transition actually occurred (API acceptance ≠ business outcome),
+- retries could not execute the same operation twice.
+
+The hackathon demo uses a **simulated $50,000 vendor payment** to prove these failure classes. No real funds are moved by this repository.
 
 ## The core idea
 
@@ -228,3 +240,30 @@ Receipts are serialized canonically and hashed with SHA-256. The digest detects 
 ## Project story in one sentence
 
 **AgentProof prevents autonomous agents from turning a once-valid decision into an invalid action — and prevents them from claiming success when reality disagrees.**
+
+## Security model
+
+- **Verdict authority:** Gemini/ADK may choose *what tool to call*; the deterministic AgentProof core alone emits `VERIFIED` / `BLOCKED` / `UNVERIFIED` / `DUPLICATE`. An LLM that claims success cannot change the receipt (see `tests/test_agentproof.py::test_gemini_cannot_override_the_deterministic_verdict`).
+- **Short-lived grants:** authorization expires (TTL) and is bound to the exact action; both are revalidated at dispatch.
+- **Atomic at-most-once:** duplicate detection and the execution-key claim share one critical section, so concurrent retries cannot both pass a check-then-write race.
+- **Outcome grounding:** `accepted` is not `settled`; success requires the observable ledger state transition.
+- **Evidence integrity:** receipts are canonicalized and SHA-256 hashed; any mutation changes the digest. The digest is a tamper-evidence mechanism, not a cryptographic signature — a production deployment should anchor or sign digests in a separate trust boundary.
+- **No secrets in the repo:** `.env` is git-ignored; only `.env.example` with empty values is committed. For Cloud Run, use Secret Manager or Vertex AI workload identity instead of committing keys.
+
+## Known limitations
+
+- The payment provider and ledger are in-process simulators; a real adapter must preserve the same atomic claim semantics (idempotency key reservation) and expose verifiable state.
+- The demo runtime holds a single in-memory `DemoState`; scale-out would require a shared store (e.g., Cloud Spanner) for the execution index and ledger.
+- Receipt digests are self-referential (tamper-evident), not externally anchored; cross-boundary attestation requires signing or a witness service.
+- Concurrency protection is per-process; the 24-retry invariant holds within one runtime instance and is proven by the test suite.
+- Gemini natural-language runs require `GEMINI_API_KEY` or Vertex AI credentials; every deterministic scenario works without any secret.
+
+## Hackathon positioning
+
+**Category: Taskmaster.** AgentProof is a verification runtime that proves what actually happened when an autonomous agent executes. It does not claim to orchestrate an enterprise fleet; it hardens a single decisive boundary: the seam between *decision* and *execution*.
+
+Hero demo: Gemini decides to pay a $50,000 invoice. Authorization is initially valid. Before dispatch the vendor is frozen — a normal agent might still execute on stale approval. AgentProof revalidates at the execution seam: **BLOCKED, $0 moved**.
+
+Second punch: the provider returns `ACCEPTED`, but the ledger never changes. AgentProof refuses to claim success: **UNVERIFIED**.
+
+Third punch: 24 concurrent retries produce exactly one execution: **1 VERIFIED, 23 DUPLICATE, no double payment**.

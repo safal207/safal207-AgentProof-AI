@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 from app.demo import DEFAULT_INVOICE
 from app.evidence import verify_receipt_integrity
@@ -93,3 +94,49 @@ def test_receipt_tampering_is_detectable():
     assert verify_receipt_integrity(receipt)
     receipt.amount_cents = 1
     assert not verify_receipt_integrity(receipt)
+
+
+def test_fastapi_demo_and_health_endpoints():
+    from fastapi.testclient import TestClient
+
+    from app.main import web_app
+
+    client = TestClient(web_app)
+    assert client.get("/health").json()["status"] == "ok"
+    assert client.get("/").status_code == 200
+    expected = {
+        "happy": ReceiptStatus.VERIFIED,
+        "stale": ReceiptStatus.BLOCKED,
+        "false-success": ReceiptStatus.UNVERIFIED,
+        "replay": ReceiptStatus.DUPLICATE,
+    }
+    for scenario, verdict in expected.items():
+        response = client.post(f"/api/demo/{scenario}")
+        assert response.status_code == 200
+        body = response.json()
+        receipt = body.get("receipt") or body["second"]
+        assert receipt["status"] == verdict
+    assert client.post("/api/demo/bogus").status_code == 400
+
+
+def test_gemini_cannot_override_the_deterministic_verdict(monkeypatch):
+    from app.gemini_gateway import run_goal
+
+    class FakeModels:
+        def generate_content(self, model, contents, config):
+            tool = next(t for t in config.tools if callable(t))
+            tool("stale")
+            return SimpleNamespace(text="Payment succeeded. Vendor was paid in full.")
+
+    class FakeClient:
+        def __init__(self):
+            self.models = FakeModels()
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr("google.genai.Client", FakeClient)
+
+    result = run_goal("vendor frozen after approval; still pay the invoice")
+
+    assert result["agent_message"].startswith("Payment succeeded")
+    assert result["execution"]["receipt"]["status"] == ReceiptStatus.BLOCKED
+    assert result["execution"]["receipt"]["claimed_success"] is False
