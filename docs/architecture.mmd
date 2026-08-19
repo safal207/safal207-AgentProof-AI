@@ -1,0 +1,12 @@
+flowchart TD
+    E[Invoice / business event] --> G[Gemini + Google ADK Agent]
+    G --> P[Proposed Action]
+    P --> A[AgentProof Authorization]
+    A --> F[Freshness + Action Binding at Dispatch Seam]
+    F -->|blocked| B[BLOCKED Receipt]
+    F -->|pass| X[Payment Provider Adapter]
+    X --> O[Outcome Verifier]
+    O -->|state absent| U[UNVERIFIED Receipt]
+    O -->|state proven| V[VERIFIED Evidence Receipt]
+    X --> I[Provider Idempotency Index]
+    I -->|replay| D[DUPLICATE Receipt]
