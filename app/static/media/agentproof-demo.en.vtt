@@ -1,0 +1,115 @@
+WEBVTT
+
+00:00.050 --> 00:06.303
+AI agents are moving from conversation into real execution.
+
+00:06.303 --> 00:11.750
+They call APIs, update systems, and can move money.
+
+00:11.750 --> 00:19.625
+But a decision that was valid when planned may no longer be valid when execution begins.
+
+00:19.625 --> 00:27.660
+And an API accepting a request does not prove the intended outcome actually happened.
+
+00:27.660 --> 00:31.125
+Traditional automation trusts a plan.
+
+00:31.125 --> 00:41.821
+Autonomous agents need a stronger contract: permission must still be true when an action crosses the execution boundary.
+
+00:41.821 --> 00:48.839
+AgentProof separates probabilistic planning from deterministic execution truth.
+
+00:48.839 --> 00:55.375
+We use Gemini 3.6 Flash with Google A D K.
+
+00:55.375 --> 00:58.392
+Gemini decides what to do.
+
+00:58.392 --> 01:02.517
+AgentProof determines what actually happened.
+
+01:02.517 --> 01:10.875
+Gemini can select a constrained scenario, but it cannot emit or change the final proof.
+
+01:10.875 --> 01:20.267
+In the normal path, Gemini receives a natural-language goal and invokes the AgentProof payment tool.
+
+01:20.267 --> 01:31.660
+The authorization is fresh, the action matches the grant, the simulated payment settles, and the ledger proves the state transition.
+
+01:31.660 --> 01:39.642
+The grant binds the invoice, vendor, amount, and execution key before dispatch.
+
+01:39.642 --> 01:44.339
+Only then does AgentProof issue VERIFIED.
+
+01:44.339 --> 01:47.053
+Now the dangerous case.
+
+01:47.053 --> 01:54.285
+The payment is authorized, but before execution the vendor policy changes.
+
+01:54.285 --> 01:58.339
+The agent had permission when it planned the payment.
+
+01:58.339 --> 02:02.500
+It did not have permission when execution began.
+
+02:02.500 --> 02:09.714
+AgentProof revalidates authority at the dispatch boundary and blocks the action.
+
+02:09.714 --> 02:12.232
+Zero dollars move.
+
+02:12.232 --> 02:18.785
+The epoch mismatch is evidence, not an exception the system ignores.
+
+02:18.785 --> 02:26.267
+Next, the provider accepts the request, but no settlement appears in the ledger.
+
+02:26.267 --> 02:30.464
+AgentProof returns UNVERIFIED.
+
+02:30.464 --> 02:33.339
+Accepted is not settled.
+
+02:33.339 --> 02:36.071
+Dispatch is not outcome.
+
+02:36.071 --> 02:40.125
+Finally, the same execution is replayed.
+
+02:40.125 --> 02:46.821
+AgentProof detects the existing execution key and returns DUPLICATE.
+
+02:46.821 --> 02:50.089
+No second payment is created.
+
+02:50.089 --> 02:59.821
+This system runs on Google Cloud Run and uses Gemini 3.6 Flash through Vertex A I.
+
+02:59.821 --> 03:17.553
+The project is reproducibly tested in GitHub Actions, with ten regression tests covering authorization freshness, outcome grounding, replay safety, concurrency, and deterministic verdict authority.
+
+03:17.553 --> 03:24.732
+The model can propose a tool call, but it cannot rewrite AgentProof's receipt.
+
+03:24.732 --> 03:32.553
+Every receipt has a canonical SHA-256 digest for audit.
+
+03:32.553 --> 03:37.071
+AI agents should be free to act autonomously.
+
+03:37.071 --> 03:42.142
+But autonomy without verification is just trust.
+
+03:42.142 --> 03:46.803
+AgentProof turns agent actions into evidence.
+
+03:46.803 --> 03:50.660
+Don't trust what an AI agent says it did.
+
+03:50.660 --> 03:53.017
+Prove what actually happened.

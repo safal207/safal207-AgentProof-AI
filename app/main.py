@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .demo import demo_runtime
@@ -16,6 +17,9 @@ web_app = FastAPI(
 )
 
 STATIC = Path(__file__).parent / "static"
+MEDIA = STATIC / "media"
+
+web_app.mount("/media", StaticFiles(directory=MEDIA), name="media")
 
 
 @web_app.get("/")

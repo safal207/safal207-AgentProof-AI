@@ -16,6 +16,7 @@
     .events{display:flex;flex-direction:column;gap:10px}.event{border-left:3px solid var(--line);padding:8px 0 8px 14px}.event b{display:inline-block;margin-right:8px}.event small{color:var(--muted)}
     pre{white-space:pre-wrap;word-break:break-word;background:#06101c;border:1px solid var(--line);border-radius:12px;padding:14px;color:#cbe1ff;font-size:12px;max-height:430px;overflow:auto}
     .impact{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;color:var(--muted)}.impact strong{color:var(--text)}
+    .video{margin-top:28px}.videohead{display:flex;justify-content:space-between;gap:18px;align-items:end;margin-bottom:14px;flex-wrap:wrap}.videohead h2{font-size:24px;margin:5px 0 0}.videohead p{margin:6px 0 0;color:var(--muted)}.video a{color:var(--blue);font-weight:700;text-decoration:none}.video a:hover{text-decoration:underline}.video video{display:block;width:100%;border:1px solid var(--line);border-radius:14px;background:#02070d;box-shadow:0 20px 70px #0006}.video small{display:block;color:var(--muted);margin-top:10px}
     .foot{margin-top:22px;color:var(--muted);font-size:13px}
     @media(max-width:800px){h1{font-size:38px}.invoice,.buttons{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.agentrow{grid-template-columns:1fr}}
   </style>
@@ -46,6 +47,18 @@
     <div class="panel"><div class="k">Live verdict</div><div id="headline" class="headline">Choose a scenario</div><div id="status" class="status">READY</div><div id="impact" class="impact"></div><div id="events" class="events" style="margin-top:18px"></div></div>
     <div class="panel"><div class="k">Machine-readable evidence receipt</div><pre id="receipt">Run a scenario to generate evidence.</pre></div>
   </div>
+  <section class="panel video" aria-labelledby="demo-video-title">
+    <div class="videohead">
+      <div><div class="k">Judge-ready walkthrough</div><h2 id="demo-video-title">Watch the live verification demo</h2><p>3:53 · Gemini tool call → deterministic AgentProof receipt · simulated $50,000 workflow</p></div>
+      <a href="/media/agentproof-demo-final.mp4" download>Download MP4</a>
+    </div>
+    <video controls preload="metadata" playsinline>
+      <source src="/media/agentproof-demo-final.mp4" type="video/mp4" />
+      <track kind="subtitles" src="/media/agentproof-demo.en.vtt" srclang="en" label="English" default />
+      Your browser does not support the embedded demo video. Use the download link above.
+    </video>
+    <small>All verdicts shown in this walkthrough come from live Cloud Run probes. No real funds are moved.</small>
+  </section>
   <div class="foot">Demo uses a simulated payment provider. No real funds are moved. A real provider adapter can replace the simulator without giving the LLM authority over outcome truth.</div>
 </div>
 <script>
