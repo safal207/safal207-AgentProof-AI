@@ -2,14 +2,16 @@
   "schema": "agentproof-live-verification/v1",
   "recorded_at": "2026-08-20",
   "repository": "safal207/safal207-AgentProof-AI",
-  "branch": "agent/submission-hardening",
-  "source_head_sha": "084dc810472608ea2f82e99a7e136b2bb07b5bbe",
+  "source_branch": "agent/submission-hardening",
+  "deployed_source_head_sha": "084dc810472608ea2f82e99a7e136b2bb07b5bbe",
   "pull_request": 1,
-  "pull_request_state": "open_draft",
+  "pull_request_state": "merged",
+  "merged_main_sha": "d74c751bfbbbaf66f8c3087a8d86f2768b8b25b6",
   "local_verification": {
     "tests": "10/10 PASS",
     "compileall": "PASS",
-    "adk_import": "PASS"
+    "adk_import": "PASS",
+    "ruff": "PASS"
   },
   "github_ci": "PASS",
   "cloud_run": {
@@ -50,5 +52,5 @@
   "secrets_exposed": false,
   "auth_mode": "Cloud Run runtime identity + Vertex settings",
   "overall": "READY_FOR_DEMO",
-  "notes": "This record intentionally excludes tokens, ADC material, service-account keys, account identifiers, and raw credential-bearing logs. No real funds are moved by AgentProof."
+  "notes": "This record intentionally excludes tokens, ADC material, service-account keys, account identifiers, and raw credential-bearing logs. No real funds are moved by AgentProof. Application code in the deployed revision and merged PR is unchanged by this documentation-only update."
 }
