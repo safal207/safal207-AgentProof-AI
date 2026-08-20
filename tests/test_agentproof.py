@@ -1,6 +1,8 @@
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
+import pytest
+
 from app.demo import DEFAULT_INVOICE
 from app.evidence import verify_receipt_integrity
 from app.models import ReceiptStatus
@@ -122,11 +124,17 @@ def test_fastapi_demo_and_health_endpoints():
 def test_gemini_cannot_override_the_deterministic_verdict(monkeypatch):
     from app.gemini_gateway import run_goal
 
+    captured = {}
+
     class FakeModels:
         def generate_content(self, model, contents, config):
-            tool = next(t for t in config.tools if callable(t))
-            tool("stale")
-            return SimpleNamespace(text="Payment succeeded. Vendor was paid in full.")
+            captured["config"] = config
+            return SimpleNamespace(
+                text="Payment succeeded. Vendor was paid in full.",
+                function_calls=[
+                    SimpleNamespace(name="run_agentproof_payment", args={"scenario": "happy"})
+                ],
+            )
 
     class FakeClient:
         def __init__(self):
@@ -138,5 +146,32 @@ def test_gemini_cannot_override_the_deterministic_verdict(monkeypatch):
     result = run_goal("vendor frozen after approval; still pay the invoice")
 
     assert result["agent_message"].startswith("Payment succeeded")
+    assert result["tool_call"] == {
+        "name": "run_agentproof_payment",
+        "model_requested_scenario": "happy",
+        "executed_scenario": "stale",
+        "scenario_lock_applied": True,
+    }
+    assert result["verdict_authority"] == "AgentProof deterministic receipt"
     assert result["execution"]["receipt"]["status"] == ReceiptStatus.BLOCKED
     assert result["execution"]["receipt"]["claimed_success"] is False
+    function_config = captured["config"].tool_config.function_calling_config
+    assert function_config.allowed_function_names == ["run_agentproof_payment"]
+
+
+def test_gemini_goal_requires_a_real_tool_call(monkeypatch):
+    from app.gemini_gateway import GeminiUnavailable, run_goal
+
+    class FakeModels:
+        def generate_content(self, model, contents, config):
+            return SimpleNamespace(text="I will pay the invoice.", function_calls=[])
+
+    class FakeClient:
+        def __init__(self):
+            self.models = FakeModels()
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr("google.genai.Client", FakeClient)
+
+    with pytest.raises(GeminiUnavailable, match="exactly one required AgentProof tool call"):
+        run_goal("pay the invoice")
