@@ -1,19 +1,66 @@
-flowchart TD
-    E[User goal / Invoice event] --> G[Gemini 3.6 Flash]
-    G -->|tool call| A[Google ADK Agent]
-    A --> P[Proposed Action]
-    P --> Z[AgentProof Orchestrator]
-    Z --> GR[Authorization Grant - short-lived, action-bound]
-    GR --> F[Freshness + Action Binding at Dispatch Seam]
-    F -->|blocked| B[BLOCKED Receipt]
-    F -->|pass| X[Atomic Idempotent Payment Adapter]
-    X -->|same execution key| D[DUPLICATE Receipt]
-    X --> O[External / Simulated Ledger]
-    O --> V[Outcome Verifier]
-    V -->|expected state absent| U[UNVERIFIED Receipt]
-    V -->|state transition proven| S[VERIFIED Evidence Receipt]
-    B --> R[Evidence timeline + canonical SHA-256 digest]
+flowchart LR
+    E["User goal / invoice event"]
+
+    subgraph DECISION["Agent decision layer — non-authoritative"]
+        direction TB
+        G["Gemini 3.6 Flash<br/>live natural-language route"]
+        ADK["Google ADK agent<br/>alternative integration entrypoint"]
+        P["Proposed action<br/><code>run_agentproof_payment</code>"]
+        G -->|one constrained tool call| P
+        ADK -->|same tool contract| P
+    end
+
+    subgraph VERIFY["AgentProof deterministic verification runtime — verdict authority"]
+        direction TB
+        Z["AgentProof orchestrator"]
+        GR["Short-lived, action-bound<br/>authorization grant"]
+        F["Freshness + action binding<br/>at the dispatch seam"]
+        X["Atomic idempotent<br/>payment adapter"]
+        L["Simulated payment provider + ledger<br/><small>No real funds move</small>"]
+        V["Outcome verifier<br/>observes ledger state"]
+        Z --> GR --> F
+        F -->|fresh and action matches| X --> L --> V
+    end
+
+    B["BLOCKED"]
+    D["DUPLICATE"]
+    U["UNVERIFIED"]
+    S["VERIFIED"]
+    R["Evidence timeline +<br/>canonical SHA-256 digest"]
+    AU["Audit / observability"]
+
+    E --> G
+    E -. optional ADK route .-> ADK
+    P --> Z
+    F -->|grant stale or action changed| B
+    X -->|execution key already claimed| D
+    V -->|expected ledger state absent| U
+    V -->|state transition proven| S
+    B --> R
     D --> R
     U --> R
     S --> R
-    R --> AU[Audit / Observability]
+    R --> AU
+
+    classDef entry fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e,stroke-width:2px;
+    classDef model fill:#f3e8ff,stroke:#9333ea,color:#581c87,stroke-width:2px;
+    classDef core fill:#dbeafe,stroke:#1d4ed8,color:#172554,stroke-width:3px;
+    classDef state fill:#ecfccb,stroke:#4d7c0f,color:#365314,stroke-width:2px;
+    classDef blocked fill:#fee2e2,stroke:#dc2626,color:#7f1d1d,stroke-width:3px;
+    classDef duplicate fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e,stroke-width:3px;
+    classDef unverified fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:3px;
+    classDef verified fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:3px;
+    classDef evidence fill:#f1f5f9,stroke:#475569,color:#0f172a,stroke-width:2px;
+
+    class E entry;
+    class G,ADK,P model;
+    class Z,GR,F,X core;
+    class L,V state;
+    class B blocked;
+    class D duplicate;
+    class U unverified;
+    class S verified;
+    class R,AU evidence;
+
+    style DECISION fill:#faf5ff,stroke:#9333ea,stroke-width:2px
+    style VERIFY fill:#eff6ff,stroke:#1d4ed8,stroke-width:3px
