@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from .demo import demo_runtime
 from .gemini_gateway import GeminiUnavailable, run_goal

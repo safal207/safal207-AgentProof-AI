@@ -25,9 +25,49 @@ unless receipt.status is VERIFIED. BLOCKED, UNVERIFIED, and DUPLICATE are
 safety outcomes and must never be rewritten as success.
 """.strip()
 
+_SCENARIOS = frozenset({"happy", "stale", "false-success", "replay"})
+_TOOL_NAME = "run_agentproof_payment"
+
+
+def _required_scenario(goal: str) -> str | None:
+    """Lock explicit safety-demo goals to their deterministic scenario.
+
+    This is intentionally narrow. Gemini remains responsible for an ordinary
+    goal, but an explicit request describing a known safety condition must not
+    be weakened by a model choosing the happy path.
+    """
+    normalized = " ".join(goal.lower().split())
+
+    if any(marker in normalized for marker in ("replay", "duplicate", "retry")):
+        return "replay"
+    if any(
+        marker in normalized
+        for marker in (
+            "false-success",
+            "false success",
+            "accepted but not settled",
+            "accepted without settlement",
+            "provider accepts but",
+        )
+    ):
+        return "false-success"
+    if any(
+        marker in normalized
+        for marker in (
+            "stale authorization",
+            "vendor frozen",
+            "vendor freeze",
+            "frozen after authorization",
+            "freeze after authorization",
+            "after approval",
+        )
+    ):
+        return "stale"
+    return None
+
 
 def run_goal(goal: str) -> dict[str, Any]:
-    """Let Gemini choose and execute one AgentProof demonstration tool call."""
+    """Ask Gemini for one tool call, then execute it through AgentProof."""
     if not goal.strip():
         raise ValueError("goal cannot be blank")
 
@@ -43,20 +83,28 @@ def run_goal(goal: str) -> dict[str, Any]:
     except ImportError as exc:  # pragma: no cover - cloud dependency path
         raise GeminiUnavailable("google-genai is not installed") from exc
 
-    executions: list[dict[str, Any]] = []
-
-    def run_agentproof_payment(scenario: str = "happy") -> dict[str, Any]:
-        """Execute a verified vendor-payment workflow.
-
-        Args:
-            scenario: One of happy, stale, false-success, replay.
-        """
-        if scenario not in {"happy", "stale", "false-success", "replay"}:
-            result = {"error": "scenario must be happy, stale, false-success, or replay"}
-        else:
-            result = demo_runtime.run(scenario)
-        executions.append(result)
-        return result
+    payment_tool = types.Tool(
+        function_declarations=[
+            types.FunctionDeclaration(
+                name=_TOOL_NAME,
+                description=(
+                    "Execute one AgentProof vendor-payment demonstration. "
+                    "The returned receipt is the sole authority for the final verdict."
+                ),
+                parameters_json_schema={
+                    "type": "object",
+                    "properties": {
+                        "scenario": {
+                            "type": "string",
+                            "enum": sorted(_SCENARIOS),
+                            "description": "The safety scenario requested by the user.",
+                        }
+                    },
+                    "required": ["scenario"],
+                },
+            )
+        ]
+    )
 
     model = os.getenv("AGENTPROOF_GEMINI_MODEL", "gemini-3.6-flash")
     client = genai.Client()
@@ -67,25 +115,48 @@ def run_goal(goal: str) -> dict[str, Any]:
             contents=goal,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
-                tools=[run_agentproof_payment],
+                tools=[payment_tool],
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                    maximum_remote_calls=2
+                    disable=True
                 ),
                 tool_config=types.ToolConfig(
-                    function_calling_config=types.FunctionCallingConfig(mode="ANY")
+                    function_calling_config=types.FunctionCallingConfig(
+                        mode="ANY", allowed_function_names=[_TOOL_NAME]
+                    )
                 ),
             ),
         )
     except Exception as exc:  # pragma: no cover - depends on external Gemini service
         raise GeminiUnavailable(f"Gemini request failed: {exc}") from exc
 
-    if not executions:
-        raise GeminiUnavailable("Gemini returned without executing the required AgentProof tool.")
+    tool_calls = getattr(response, "function_calls", None) or []
+    if len(tool_calls) != 1:
+        raise GeminiUnavailable("Gemini returned without exactly one required AgentProof tool call.")
 
-    execution = executions[-1]
+    tool_call = tool_calls[0]
+    if getattr(tool_call, "name", None) != _TOOL_NAME:
+        raise GeminiUnavailable("Gemini returned an unexpected tool call.")
+
+    arguments = dict(getattr(tool_call, "args", None) or {})
+    requested_scenario = arguments.get("scenario", "happy")
+    if not isinstance(requested_scenario, str) or requested_scenario not in _SCENARIOS:
+        raise GeminiUnavailable("Gemini returned an invalid AgentProof scenario.")
+
+    locked_scenario = _required_scenario(goal)
+    executed_scenario = locked_scenario or requested_scenario
+    execution = demo_runtime.run(executed_scenario)
+
     return {
         "model": model,
         "goal": goal,
-        "agent_message": response.text or "AgentProof tool executed.",
+        "agent_message": response.text or "Gemini requested AgentProof execution.",
+        "tool_call": {
+            "name": _TOOL_NAME,
+            "model_requested_scenario": requested_scenario,
+            "executed_scenario": executed_scenario,
+            "scenario_lock_applied": locked_scenario is not None
+            and locked_scenario != requested_scenario,
+        },
+        "verdict_authority": "AgentProof deterministic receipt",
         "execution": execution,
     }
