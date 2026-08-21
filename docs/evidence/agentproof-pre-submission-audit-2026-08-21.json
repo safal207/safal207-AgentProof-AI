@@ -1,6 +1,6 @@
 {
   "schema": "agentproof-pre-submission-audit/v1",
-  "audited_at": "2026-08-21T02:32:55Z",
+  "audited_at": "2026-08-21T02:36:05Z",
   "repository": "safal207/safal207-AgentProof-AI",
   "target_branch": "main",
   "target_source_head_sha": "f7c0ce7e1d6906518c4d027cd9f5aeabf860c28f",
@@ -50,7 +50,15 @@
     "tool_call_contract": "PASS",
     "deterministic_verdict_authority": "PASS",
     "llm_output_override_test": "PASS",
-    "live_gemini_request": "NOT_RE_RUN: credentials not available in audit environment"
+    "live_gemini_request": {
+      "http": 200,
+      "model": "gemini-3.6-flash",
+      "tool_call": "run_agentproof_payment",
+      "requested_scenario": "stale",
+      "executed_scenario": "stale",
+      "verdict": "BLOCKED",
+      "claimed_success": false
+    }
   },
   "documentation": {
     "current_main_before_patch": "NEEDS_PACKAGING",
