@@ -11,7 +11,7 @@ Autonomous AI agents are moving from conversation into execution — but an agen
 3. **False success** — an external API accepts a request, but the expected real-world state transition never occurs.
 4. **Replay / duplicate execution** — the same action is dispatched again, including concurrent retries.
 
-## Value proposition
+## Solution
 
 AgentProof lets an agent act autonomously while independently proving:
 
@@ -78,9 +78,29 @@ flowchart TD
 
 The ADK entrypoint is `app/agent.py`. The direct Gemini goal endpoint is implemented in `app/gemini_gateway.py`. The business-critical verification core remains deterministic and testable without an LLM.
 
+## Demo instructions
+
+The four deterministic scenarios are available from the web UI without Gemini credentials. The full walkthrough is in [`docs/demo-script.md`](docs/demo-script.md).
+
+## Demo links
+
+- [Demo video on YouTube](https://youtu.be/Ey5s2v0jLO8)
+- [Live Cloud Run demo](https://agentproof-ssejdi5rra-uc.a.run.app)
+
+## Verification results
+
+Verified on commit `f7c0ce7e1d6906518c4d027cd9f5aeabf860c28f`:
+
+| Check | Result |
+|---|---|
+| Deterministic test suite | `10 passed` |
+| Python compile check | `PASS` |
+| GitHub Actions | [`verify` run #19](https://github.com/safal207/safal207-AgentProof-AI/actions/runs/32347099109) — `PASS` on Python 3.11 and 3.12 |
+| Runtime scenarios | `VERIFIED`, `BLOCKED`, `UNVERIFIED`, `DUPLICATE` |
+
 ---
 
-# Reproducible testing instructions
+## Setup and reproducible testing
 
 ## 1. Clone and enter the project
 
@@ -129,7 +149,7 @@ pytest -q
 Expected current result:
 
 ```text
-7 passed
+10 passed
 ```
 
 The suite proves:
