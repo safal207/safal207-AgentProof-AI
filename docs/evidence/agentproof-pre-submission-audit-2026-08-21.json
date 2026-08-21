@@ -1,0 +1,71 @@
+{
+  "schema": "agentproof-pre-submission-audit/v1",
+  "audited_at": "2026-08-21T02:32:55Z",
+  "repository": "safal207/safal207-AgentProof-AI",
+  "target_branch": "main",
+  "target_source_head_sha": "f7c0ce7e1d6906518c4d027cd9f5aeabf860c28f",
+  "scope": "pre-submission demo, runtime, evidence, documentation, and CI audit",
+  "local_source_state": {
+    "python": "3.12.13",
+    "pytest": "10 passed",
+    "compileall": "PASS",
+    "ruff": "8 non-blocking style findings; not part of repository CI",
+    "docker_engine": "NOT_RUN: docker/podman/buildah/nerdctl unavailable"
+  },
+  "github_ci": {
+    "workflow": "verify",
+    "run_number": 19,
+    "run_id": 32347099109,
+    "head_sha": "f7c0ce7e1d6906518c4d027cd9f5aeabf860c28f",
+    "python_matrix": ["3.11", "3.12"],
+    "conclusion": "PASS",
+    "url": "https://github.com/safal207/safal207-AgentProof-AI/actions/runs/32347099109"
+  },
+  "live_runtime": {
+    "url": "https://agentproof-ssejdi5rra-uc.a.run.app",
+    "health_http": 200,
+    "index_http": 200,
+    "scenarios": {
+      "happy": {"http": 200, "verdict": "VERIFIED"},
+      "stale": {"http": 200, "verdict": "BLOCKED"},
+      "false-success": {"http": 200, "verdict": "UNVERIFIED"},
+      "replay": {"http": 200, "verdict": "DUPLICATE"}
+    },
+    "receipt_fields_observed": [
+      "action",
+      "authorization state",
+      "status",
+      "created_at",
+      "claimed_success",
+      "events",
+      "evidence_hash"
+    ],
+    "static_artifact_parity": {
+      "index_html_normalized_text": "PASS",
+      "demo_video_bytes": "PASS",
+      "live_revision_header": "NOT_EXPOSED"
+    }
+  },
+  "agent_flow": {
+    "tool_call_contract": "PASS",
+    "deterministic_verdict_authority": "PASS",
+    "llm_output_override_test": "PASS",
+    "live_gemini_request": "NOT_RE_RUN: credentials not available in audit environment"
+  },
+  "documentation": {
+    "current_main_before_patch": "NEEDS_PACKAGING",
+    "draft_pr": "https://github.com/safal207/safal207-AgentProof-AI/pull/3",
+    "fixed_in_pr": [
+      "explicit Solution section",
+      "Demo instructions",
+      "Setup section",
+      "Verification results",
+      "YouTube demo link",
+      "Cloud Run live link",
+      "10 passed documentation count"
+    ]
+  },
+  "historical_evidence_note": "docs/evidence/agentproof-live-verification-2026-08-20.json remains historical because its deployed source head predates the current main head.",
+  "ready": "YES_AFTER_DRAFT_PR_MERGE",
+  "release_verdict": "PASS_WITH_DOCUMENTATION_PR"
+}
