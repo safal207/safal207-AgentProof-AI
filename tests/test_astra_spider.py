@@ -1,4 +1,10 @@
+from pathlib import Path
+
 from app.astra_spider import Stage, StateEvent, verify_causal_economic_outcome
+from app.astra_trace import build_trace_report, load_trace
+
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "astra"
 
 
 def event(stage, key, value, source, **kwargs):
@@ -52,6 +58,58 @@ def test_retry_that_settles_twice_is_detected():
         ]
     )
     assert "RETRY_DUPLICATE_PAYMENT" in found
+
+
+def test_repeated_idempotency_key_with_same_context_is_not_called_replay():
+    found = codes(
+        [
+            event(
+                Stage.PAYMENT_ATTEMPT,
+                "attempt",
+                "sent",
+                "client",
+                attempt_id="idem-1",
+                operation_id="op-1",
+                session_id="session-1",
+                payload_hash="hash-1",
+            ),
+            event(
+                Stage.PAYMENT_ATTEMPT,
+                "attempt",
+                "retry",
+                "client",
+                attempt_id="idem-1",
+                operation_id="op-1",
+                session_id="session-1",
+                payload_hash="hash-1",
+            ),
+        ]
+    )
+    assert "ATTEMPT_ID_COLLISION" not in found
+
+
+def test_same_attempt_id_across_payloads_is_detected():
+    found = codes(
+        [
+            event(
+                Stage.PAYMENT_ATTEMPT,
+                "attempt",
+                "sent",
+                "client",
+                attempt_id="idem-1",
+                payload_hash="hash-1",
+            ),
+            event(
+                Stage.PAYMENT_ATTEMPT,
+                "attempt",
+                "retry",
+                "client",
+                attempt_id="idem-1",
+                payload_hash="hash-2",
+            ),
+        ]
+    )
+    assert "ATTEMPT_ID_COLLISION" in found
 
 
 def test_settled_but_not_delivered_is_detected():
@@ -117,3 +175,42 @@ def test_happy_path_has_no_findings():
         ]
     )
     assert found == set()
+
+
+def test_all_killer_fixtures_match_their_expected_findings():
+    paths = sorted(FIXTURES.glob("*.json"))
+    assert len(paths) == 3
+    for path in paths:
+        trace = load_trace(path)
+        report = build_trace_report(trace)
+        assert {finding.code for finding in report.findings} == set(trace.expected_codes)
+        assert report.verdict == "DIVERGED"
+        assert len(report.evidence_hash) == 64
+
+
+def test_over_capture_is_detected_from_authoritative_amount_evidence():
+    found = codes(
+        [
+            event(
+                Stage.MANDATE_AUTHORIZATION,
+                "authorized_amount_minor",
+                100,
+                "mandate",
+            ),
+            event(
+                Stage.ACTUAL_SETTLEMENT_FINALITY,
+                "captured_amount_minor",
+                120,
+                "psp",
+                authoritative=True,
+            ),
+        ]
+    )
+    assert "OVER_CAPTURE" in found
+
+
+def test_claimed_settled_without_independent_finality_is_detected():
+    found = codes(
+        [event(Stage.CLAIMED_RESULT, "payment_status", "settled", "facilitator")]
+    )
+    assert "CLAIMED_SETTLED_WITHOUT_FINALITY" in found
