@@ -1,0 +1,43 @@
+{
+  "trace_id": "astra-x402-batch-local-truth-001",
+  "protocol": "x402/batch-settlement",
+  "scenario": "A successful PAYMENT-RESPONSE supplies an inflated cumulative channel state and a vulnerable client persists it.",
+  "expected_codes": [
+    "UNTRUSTED_CLAIMED_LEDGER_STATE",
+    "LEDGER_STATE_DIVERGENCE"
+  ],
+  "events": [
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "client_ledger_before_minor",
+      "value": 0,
+      "source": "client-local-state",
+      "operation_id": "purchase-001",
+      "session_id": "channel-001"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "charged_amount_minor",
+      "value": 10000,
+      "source": "payment-response",
+      "operation_id": "purchase-001",
+      "session_id": "channel-001"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "channel_state_cumulative_minor",
+      "value": 40000,
+      "source": "payment-response.channelState",
+      "operation_id": "purchase-001",
+      "session_id": "channel-001"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "client_ledger_after_minor",
+      "value": 40000,
+      "source": "vulnerable-client-local-write",
+      "operation_id": "purchase-001",
+      "session_id": "channel-001"
+    }
+  ]
+}
