@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import asdict, dataclass
+from datetime import datetime
+from decimal import Decimal
+from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping
 
 from .astra_spider import Finding, Stage, StateEvent, verify_causal_economic_outcome
+
+
+HASH_PROFILE = "astra-trace-json-v1"
 
 
 @dataclass(frozen=True)
@@ -24,59 +31,123 @@ class TraceReport:
     protocol: str
     scenario: str
     verdict: str
+    hash_profile: str
     evidence_hash: str
     findings: tuple[Finding, ...]
 
 
+def _required_text(raw: Mapping[str, Any], key: str) -> str:
+    value = raw.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{key} must be a non-empty string")
+    return value
+
+
+def _optional_text(raw: Mapping[str, Any], key: str) -> str | None:
+    value = raw.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{key} must be a non-empty string when present")
+    return value
+
+
 def state_event_from_mapping(raw: Mapping[str, Any]) -> StateEvent:
+    authoritative = raw.get("authoritative", False)
+    if not isinstance(authoritative, bool):
+        raise ValueError("authoritative must be a JSON boolean")
+
+    try:
+        stage = Stage(_required_text(raw, "stage"))
+    except ValueError as exc:
+        raise ValueError(f"invalid stage: {raw.get('stage')!r}") from exc
+
     return StateEvent(
-        stage=Stage(raw["stage"]),
-        key=str(raw["key"]),
+        stage=stage,
+        key=_required_text(raw, "key"),
         value=raw.get("value"),
-        source=str(raw["source"]),
-        authoritative=bool(raw.get("authoritative", False)),
-        attempt_id=raw.get("attempt_id"),
-        payment_id=raw.get("payment_id"),
-        operation_id=raw.get("operation_id"),
-        session_id=raw.get("session_id"),
-        authorization_id=raw.get("authorization_id"),
-        payload_hash=raw.get("payload_hash"),
+        source=_required_text(raw, "source"),
+        authoritative=authoritative,
+        attempt_id=_optional_text(raw, "attempt_id"),
+        payment_id=_optional_text(raw, "payment_id"),
+        operation_id=_optional_text(raw, "operation_id"),
+        session_id=_optional_text(raw, "session_id"),
+        authorization_id=_optional_text(raw, "authorization_id"),
+        payload_hash=_optional_text(raw, "payload_hash"),
         observed_at=raw.get("observed_at"),
     )
 
 
 def trace_from_mapping(raw: Mapping[str, Any]) -> Trace:
+    raw_events = raw.get("events")
+    if not isinstance(raw_events, list):
+        raise ValueError("events must be a JSON array")
+    raw_expected = raw.get("expected_codes", [])
+    if not isinstance(raw_expected, list) or not all(
+        isinstance(code, str) and code for code in raw_expected
+    ):
+        raise ValueError("expected_codes must be an array of non-empty strings")
+
     return Trace(
-        trace_id=str(raw["trace_id"]),
-        protocol=str(raw["protocol"]),
-        scenario=str(raw["scenario"]),
-        events=tuple(state_event_from_mapping(e) for e in raw["events"]),
-        expected_codes=tuple(map(str, raw.get("expected_codes", []))),
+        trace_id=_required_text(raw, "trace_id"),
+        protocol=_required_text(raw, "protocol"),
+        scenario=_required_text(raw, "scenario"),
+        events=tuple(state_event_from_mapping(event) for event in raw_events),
+        expected_codes=tuple(raw_expected),
     )
 
 
 def load_trace(path: str | Path) -> Trace:
     with Path(path).open("r", encoding="utf-8") as handle:
-        return trace_from_mapping(json.load(handle))
+        raw = json.load(handle)
+    if not isinstance(raw, Mapping):
+        raise ValueError("trace fixture must be a JSON object")
+    return trace_from_mapping(raw)
+
+
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            raise ValueError("naive datetime is not valid trace evidence")
+        return value.isoformat()
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("non-finite float is not valid trace evidence")
+        return value
+    if isinstance(value, Mapping):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_ready(item) for item in value]
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    raise TypeError(f"unsupported trace evidence type: {type(value).__name__}")
 
 
 def canonical_trace_hash(trace: Trace) -> str:
     payload = {
+        "hash_profile": HASH_PROFILE,
         "trace_id": trace.trace_id,
         "protocol": trace.protocol,
         "scenario": trace.scenario,
-        "events": [
-            {**asdict(event), "stage": event.stage.value}
-            for event in trace.events
-        ],
+        "events": [_json_ready(asdict(event)) for event in trace.events],
     }
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode()).hexdigest()
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def build_trace_report(trace: Trace) -> TraceReport:
     findings = tuple(verify_causal_economic_outcome(trace.events))
-    severities = {f.severity for f in findings}
+    severities = {finding.severity for finding in findings}
     verdict = (
         "DIVERGED"
         if severities & {"critical", "high"}
@@ -89,6 +160,7 @@ def build_trace_report(trace: Trace) -> TraceReport:
         protocol=trace.protocol,
         scenario=trace.scenario,
         verdict=verdict,
+        hash_profile=HASH_PROFILE,
         evidence_hash=canonical_trace_hash(trace),
         findings=findings,
     )
@@ -100,6 +172,7 @@ def report_to_mapping(report: TraceReport) -> dict[str, Any]:
         "protocol": report.protocol,
         "scenario": report.scenario,
         "verdict": report.verdict,
+        "hash_profile": report.hash_profile,
         "evidence_hash": report.evidence_hash,
         "findings": [
             {
