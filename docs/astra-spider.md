@@ -26,20 +26,49 @@ Astra keeps claims separate from independently designated economic evidence:
 - HTTP/payment headers, callbacks, merchant receipts, agent messages, or facilitator responses may describe a claimed state.
 - Chain finality, PSP settlement records, custody records, or another independently established ledger may establish authoritative economic state.
 - A receipt is evidence about a payment. It must not silently override stronger finality evidence.
-- `authoritative=True` is supplied by the integration. The core verifier does not hard-code one protocol, provider, or chain as universal truth.
+- `authoritative=True` is supplied by the integration. The core verifier does not hard-code one provider, protocol, or chain as universal truth.
 
 The result is intentionally bounded. Astra can prove a contradiction in the supplied evidence; it cannot prove that an event absent from all observed sources never happened globally.
 
-## Identity and retry rule
+## Numeric correctness
+
+Monetary values are parsed with exact `Decimal` arithmetic rather than binary floating point. This matters for atomic values above `2^53`, decimal-string amounts, and partial captures.
+
+When the same economic amount is exposed through several views, Astra uses one precedence class rather than adding synonymous fields together:
+
+```text
+captured_amount_minor
+  -> charged_amount_minor
+  -> settled_amount_minor
+```
+
+This prevents a receipt that contains both `settled_amount` and `captured_amount` from being misread as two charges.
+
+## Identity, retry, and multi-settlement rule
 
 An idempotency key or repeated `attempt_id` is not automatically replay. Reusing the same key for the same payload, operation, and session is often the correct retry behavior.
 
 Astra reports identity misuse only when:
 
 - one attempt identity crosses payload, session, or operation context; or
-- more than one distinct payment actually reaches authoritative settlement for one ordinary logical operation.
+- more distinct payments settle than the declared lifecycle permits.
 
-This prevents the verifier from misclassifying correct idempotent retries as attacks.
+For ordinary one-payment flows, two distinct settled payment IDs produce `RETRY_DUPLICATE_PAYMENT`.
+
+For batch, partial, installment, auth-capture, or escrow flows, the adapter should supply `expected_settlement_count`. Without that bound, multiple settlements produce `MULTI_SETTLEMENT_UNRESOLVED` rather than a false duplicate-payment accusation.
+
+## Deterministic evidence hash
+
+Each trace report includes:
+
+```text
+hash_profile = astra-trace-json-v1
+evidence_hash = SHA-256(deterministic supported-profile JSON)
+```
+
+The profile sorts object keys, fixes separators, preserves UTF-8, rejects non-finite floats, serializes exact decimals as strings, and rejects naive datetimes. The hash is an integrity identifier for the normalized trace. It is **not** a digital signature and is not claimed to be RFC 8785/JCS.
+
+The fixture oracle (`expected_codes`) is intentionally excluded from the evidence hash so changing an expected verdict does not change the preserved input evidence.
 
 ## Reproducible killer fixtures
 
@@ -53,11 +82,7 @@ Transition:
 CLAIMED RESULT -> RECONCILIATION / CLIENT LEDGER
 ```
 
-The fixture models the defect class fixed by
-[x402 PR #3251](https://github.com/x402-foundation/x402/pull/3251):
-a successful `PAYMENT-RESPONSE` reports a cumulative channel amount of `40000`,
-while client-local prior state plus the bounded charge derives `10000`. A
-vulnerable client persists `40000`.
+The fixture models the defect class fixed by [x402 PR #3251](https://github.com/x402-foundation/x402/pull/3251): a successful `PAYMENT-RESPONSE` reports a cumulative channel amount of `40000`, while client-local prior state plus the bounded charge derives `10000`. A vulnerable client persists `40000`.
 
 Expected findings:
 
@@ -72,17 +97,13 @@ Transition:
 QUOTE/CHALLENGE -> MANDATE/AUTHORIZATION
 ```
 
-The fixture models the cross-SDK lifetime mismatch addressed by
-[x402 PR #3282](https://github.com/x402-foundation/x402/pull/3282):
-the resource server advertises a 30-second window, while the authorization
-remains valid for one hour.
+The fixture models the cross-SDK lifetime mismatch addressed by [x402 PR #3282](https://github.com/x402-foundation/x402/pull/3282): the resource server advertises a 30-second window, while the authorization remains valid for one hour.
 
 Expected finding:
 
 - `AUTHORIZATION_OUTLIVES_CHALLENGE`
 
-If authoritative settlement evidence is later observed inside that extra
-window, the stronger verdict becomes `STALE_AUTHORIZATION_SETTLED`.
+If authoritative settlement evidence is later observed inside that extra window, the stronger verdict becomes `STALE_AUTHORIZATION_SETTLED`.
 
 ### 3. x402 auth-capture: delivery before deferred capture
 
@@ -92,28 +113,18 @@ Transition:
 RESOURCE/OUTCOME DELIVERY -> ACTUAL SETTLEMENT/FINALITY
 ```
 
-The fixture models an escrow resource server that delivers the outcome and
-terminates before deferred capture is confirmed.
+The fixture models an escrow resource server that delivers the outcome and terminates before deferred capture is confirmed.
 
 Expected finding:
 
 - `DELIVERED_WITHOUT_CAPTURE`
 
-The finding does not claim that capture can never occur. It states that the
-supplied trace proves delivery while capture remains unconfirmed.
+The finding does not claim that capture can never occur. It states that the supplied trace proves delivery while capture remains unconfirmed.
 
 ## Run the fixtures
 
 ```bash
 python scripts/run_astra_fixtures.py
-```
-
-Expected output:
-
-```text
-[PASS] astra-x402-auth-capture-001 | DIVERGED | DELIVERED_WITHOUT_CAPTURE | sha256:...
-[PASS] astra-x402-eip3009-window-001 | DIVERGED | AUTHORIZATION_OUTLIVES_CHALLENGE | sha256:...
-[PASS] astra-x402-batch-local-truth-001 | DIVERGED | LEDGER_STATE_DIVERGENCE, UNTRUSTED_CLAIMED_LEDGER_STATE | sha256:...
 ```
 
 Machine-readable output:
@@ -122,9 +133,7 @@ Machine-readable output:
 python scripts/run_astra_fixtures.py --json
 ```
 
-Each report includes a canonical SHA-256 hash over the trace evidence. The
-fixture runner exits non-zero only when the observed finding set differs from
-the fixture oracle.
+The runner exits non-zero when the observed finding set differs from the fixture oracle. CI executes the fixture runner on Python 3.11 and 3.12 in addition to the unit-test suite.
 
 ## Invariant catalogue
 
@@ -135,8 +144,9 @@ the fixture oracle.
 | `ATTEMPT_ID_COLLISION` | PAYMENT ATTEMPT -> PAYMENT ATTEMPT | One attempt identity crosses divergent payload/session/operation context. |
 | `CLAIMED_FAILED_BUT_SETTLED` | CLAIMED RESULT -> ACTUAL SETTLEMENT/FINALITY | A component reports failure while independent evidence shows settlement. |
 | `CLAIMED_SETTLED_WITHOUT_FINALITY` | CLAIMED RESULT -> ACTUAL SETTLEMENT/FINALITY | Settlement is claimed without matching authoritative finality. |
-| `FINALITY_EVIDENCE_MISSING` | CLAIMED RESULT -> ACTUAL SETTLEMENT/FINALITY | A terminal failure is claimed, but the observed trace cannot independently resolve finality. |
-| `RETRY_DUPLICATE_PAYMENT` | PAYMENT ATTEMPT -> ACTUAL SETTLEMENT/FINALITY | Multiple distinct payments settle for one ordinary logical operation. |
+| `FINALITY_EVIDENCE_MISSING` | CLAIMED RESULT -> ACTUAL SETTLEMENT/FINALITY | A terminal result is claimed, but the observed trace cannot independently resolve finality. |
+| `RETRY_DUPLICATE_PAYMENT` | PAYMENT ATTEMPT -> ACTUAL SETTLEMENT/FINALITY | More payments settle than the logical operation permits. |
+| `MULTI_SETTLEMENT_UNRESOLVED` | PAYMENT ATTEMPT -> ACTUAL SETTLEMENT/FINALITY | Multiple settlements exist in a multi-settlement mode, but the expected lifecycle count is absent. |
 | `OVER_CAPTURE` | MANDATE/AUTHORIZATION -> ACTUAL SETTLEMENT/FINALITY | Total authoritative capture exceeds the authorized maximum. |
 | `UNTRUSTED_CLAIMED_LEDGER_STATE` | CLAIMED RESULT -> RECONCILIATION | Upstream cumulative state conflicts with a client-local derivation. |
 | `LEDGER_STATE_DIVERGENCE` | CLAIMED RESULT -> RECONCILIATION | Conflicting upstream state was persisted as local ledger truth. |
@@ -149,10 +159,7 @@ the fixture oracle.
 
 ## Adapter boundary
 
-Protocol adapters normalize x402, AP2, MPP, AgentCore Payments, wallet/custody
-providers, PSP/facilitator APIs, merchant logs, receipts, and chain evidence into
-`StateEvent` records. Protocol-specific parsing belongs in adapters; causal and
-economic invariants remain protocol-neutral.
+Protocol adapters normalize x402, AP2, MPP, AgentCore Payments, wallet/custody providers, PSP/facilitator APIs, merchant logs, receipts, and chain evidence into `StateEvent` records. Protocol-specific parsing belongs in adapters; causal and economic invariants remain protocol-neutral.
 
 Priority adapters after these fixtures:
 
