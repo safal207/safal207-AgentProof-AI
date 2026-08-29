@@ -5,6 +5,12 @@ from app.astra_trace import build_trace_report, load_trace
 
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "astra"
+EXPECTED_FIXTURES = {
+    "x402_auth_capture_delivery_before_capture.json",
+    "x402_authorization_window.json",
+    "x402_batch_settlement_untrusted_state.json",
+    "x402_funded_but_merchant_unsettled.json",
+}
 
 
 def event(stage, key, value, source, **kwargs):
@@ -179,7 +185,7 @@ def test_happy_path_has_no_findings():
 
 def test_all_killer_fixtures_match_their_expected_findings():
     paths = sorted(FIXTURES.glob("*.json"))
-    assert len(paths) == 3
+    assert {path.name for path in paths} == EXPECTED_FIXTURES
     for path in paths:
         trace = load_trace(path)
         report = build_trace_report(trace)
