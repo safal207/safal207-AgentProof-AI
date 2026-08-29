@@ -4,6 +4,7 @@ from collections.abc import Iterable
 
 from .astra_commitment import verify_terminal_commitment_outcome
 from .astra_multileg import verify_multileg_causal_outcome
+from .astra_origin import verify_payment_credential_origin
 from .astra_retry import verify_indeterminate_retry_outcome
 from .astra_verifier import (
     STATE_GRAPH,
@@ -25,6 +26,7 @@ def verify_causal_economic_outcome(
         *verify_multileg_causal_outcome(materialized),
         *verify_terminal_commitment_outcome(materialized),
         *verify_indeterminate_retry_outcome(materialized),
+        *verify_payment_credential_origin(materialized),
     ]
 
 
@@ -36,5 +38,6 @@ __all__ = [
     "verify_causal_economic_outcome",
     "verify_indeterminate_retry_outcome",
     "verify_multileg_causal_outcome",
+    "verify_payment_credential_origin",
     "verify_terminal_commitment_outcome",
 ]
