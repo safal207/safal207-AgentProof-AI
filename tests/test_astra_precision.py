@@ -3,7 +3,12 @@ from decimal import Decimal
 import pytest
 
 from app.astra_spider import Stage, StateEvent, verify_causal_economic_outcome
-from app.astra_trace import HASH_PROFILE, build_trace_report, trace_from_mapping
+from app.astra_trace import (
+    HASH_PROFILE,
+    build_trace_report,
+    canonical_trace_hash,
+    trace_from_mapping,
+)
 
 
 def event(stage, key, value, source="test", **kwargs):
@@ -203,3 +208,47 @@ def test_hash_profile_is_versioned_and_decimal_evidence_is_supported():
     )
     assert report.hash_profile == HASH_PROFILE
     assert len(report.evidence_hash) == 64
+
+
+def test_trace_parser_rejects_unknown_expected_verdict():
+    with pytest.raises(ValueError, match="expected_verdict must be one of"):
+        trace_from_mapping(
+            {
+                "trace_id": "trace-verdict-invalid",
+                "protocol": "test",
+                "scenario": "invalid verdict oracle",
+                "expected_verdict": "PASS",
+                "events": [],
+            }
+        )
+
+
+def test_oracle_fields_do_not_change_evidence_hash():
+    evidence = {
+        "trace_id": "trace-oracle-hash",
+        "protocol": "test",
+        "scenario": "oracle fields excluded",
+        "events": [
+            {
+                "stage": "CLAIMED RESULT",
+                "key": "payment_status",
+                "value": "settled",
+                "source": "status-api",
+            }
+        ],
+    }
+    verified_oracle = trace_from_mapping(
+        {
+            **evidence,
+            "expected_codes": [],
+            "expected_verdict": "VERIFIED",
+        }
+    )
+    divergent_oracle = trace_from_mapping(
+        {
+            **evidence,
+            "expected_codes": ["CLAIMED_SETTLED_WITHOUT_FINALITY"],
+            "expected_verdict": "DIVERGED",
+        }
+    )
+    assert canonical_trace_hash(verified_oracle) == canonical_trace_hash(divergent_oracle)
