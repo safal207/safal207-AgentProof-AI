@@ -57,6 +57,8 @@ For ordinary one-payment flows, two distinct settled payment IDs produce `RETRY_
 
 For batch, partial, installment, auth-capture, or escrow flows, the adapter should supply `expected_settlement_count`. Without that bound, multiple settlements produce `MULTI_SETTLEMENT_UNRESOLVED` rather than a false duplicate-payment accusation.
 
+For economically distinct multi-leg flows, the adapter declares `required_settlement_legs`. Each leg needs its own authoritative completion evidence; an intermediate funding or reserve leg must not silently become terminal success for the merchant obligation.
+
 ## Deterministic evidence hash
 
 Each trace report includes:
@@ -68,11 +70,11 @@ evidence_hash = SHA-256(deterministic supported-profile JSON)
 
 The profile sorts object keys, fixes separators, preserves UTF-8, rejects non-finite floats, serializes exact decimals as strings, and rejects naive datetimes. The hash is an integrity identifier for the normalized trace. It is **not** a digital signature and is not claimed to be RFC 8785/JCS.
 
-The fixture oracle (`expected_codes`) is intentionally excluded from the evidence hash so changing an expected verdict does not change the preserved input evidence.
+Fixture-oracle fields (`expected_codes` and `expected_verdict`) are intentionally excluded from the evidence hash so changing an expected result does not change the preserved input evidence.
 
 ## Reproducible killer fixtures
 
-The repository ships three deterministic fixtures under `fixtures/astra/`.
+The repository ships five deterministic fixtures under `fixtures/astra/`.
 
 ### 1. x402 batch-settlement: upstream state becomes local ledger truth
 
@@ -121,6 +123,34 @@ Expected finding:
 
 The finding does not claim that capture can never occur. It states that the supplied trace proves delivery while capture remains unconfirmed.
 
+### 4. x402 two-leg crash: funding is not merchant settlement
+
+Transition:
+
+```text
+FUNDING FINALITY -> CLAIMED RESULT -> MERCHANT SETTLEMENT / DELIVERY / RECONCILIATION
+```
+
+The divergent fixture models the boundary documented by Haven-AI issue `#2145`: the funding leg is independently confirmed, the merchant leg has no completion evidence, yet the status surface claims `payment_confirmed` and `next_action: none`.
+
+Expected verdict: `DIVERGED`.
+
+Expected findings:
+
+- `FUNDED_BUT_MERCHANT_UNSETTLED`
+- `PARTIAL_SETTLEMENT_CLAIMED_COMPLETE`
+- `RECOVERY_ACTION_MISSING`
+
+### 5. x402 two-leg recovery: resume the original operation
+
+The paired green fixture keeps one logical `operation_id` through funding, a server-derived retry action, resumption of the original operation, one merchant settlement, receipt, delivery, and terminal reconciliation.
+
+Expected verdict: `VERIFIED`.
+
+Expected findings: none.
+
+This normalized shape is supported by Haven-AI's public Base-Sepolia QA evidence: after the recovery configuration was corrected, all 14 scenarios passed, the original payment resumed, 0.001 USDC moved treasury to merchant, and the delegate returned to baseline. The fixture uses sanitized identifiers and is not a verbatim export of Haven runtime data.
+
 ## Run the fixtures
 
 ```bash
@@ -133,7 +163,7 @@ Machine-readable output:
 python scripts/run_astra_fixtures.py --json
 ```
 
-The runner exits non-zero when the observed finding set differs from the fixture oracle. CI executes the fixture runner on Python 3.11 and 3.12 in addition to the unit-test suite.
+The runner exits non-zero when the observed finding set or a declared `expected_verdict` differs from the fixture oracle. CI executes the fixture runner on Python 3.11 and 3.12 in addition to the unit-test suite.
 
 ## Invariant catalogue
 
@@ -147,6 +177,10 @@ The runner exits non-zero when the observed finding set differs from the fixture
 | `FINALITY_EVIDENCE_MISSING` | CLAIMED RESULT -> ACTUAL SETTLEMENT/FINALITY | A terminal result is claimed, but the observed trace cannot independently resolve finality. |
 | `RETRY_DUPLICATE_PAYMENT` | PAYMENT ATTEMPT -> ACTUAL SETTLEMENT/FINALITY | More payments settle than the logical operation permits. |
 | `MULTI_SETTLEMENT_UNRESOLVED` | PAYMENT ATTEMPT -> ACTUAL SETTLEMENT/FINALITY | Multiple settlements exist in a multi-settlement mode, but the expected lifecycle count is absent. |
+| `FUNDED_BUT_MERCHANT_UNSETTLED` | ACTUAL SETTLEMENT/FINALITY -> RESOURCE/OUTCOME DELIVERY | An intermediate funding leg is complete while merchant settlement is not established. |
+| `PARTIAL_SETTLEMENT_OUTCOME_UNRESOLVED` | ACTUAL SETTLEMENT/FINALITY -> RECONCILIATION | Some declared economic legs are complete and others remain unresolved. |
+| `PARTIAL_SETTLEMENT_CLAIMED_COMPLETE` | CLAIMED RESULT -> ACTUAL SETTLEMENT/FINALITY | A status surface claims completion while a required economic leg remains unresolved. |
+| `RECOVERY_ACTION_MISSING` | CLAIMED RESULT -> RECONCILIATION | The status surface says no action is required while a required leg remains unresolved. |
 | `OVER_CAPTURE` | MANDATE/AUTHORIZATION -> ACTUAL SETTLEMENT/FINALITY | Total authoritative capture exceeds the authorized maximum. |
 | `UNTRUSTED_CLAIMED_LEDGER_STATE` | CLAIMED RESULT -> RECONCILIATION | Upstream cumulative state conflicts with a client-local derivation. |
 | `LEDGER_STATE_DIVERGENCE` | CLAIMED RESULT -> RECONCILIATION | Conflicting upstream state was persisted as local ledger truth. |
@@ -163,10 +197,11 @@ Protocol adapters normalize x402, AP2, MPP, AgentCore Payments, wallet/custody p
 
 Priority adapters after these fixtures:
 
-1. **AP2 token/order boundary** — local token consumption and order allocation must not imply PSP settlement.
-2. **MPP retry semantics** — payment error classes must produce deterministic retry/no-retry behavior without duplicate spend.
-3. **AgentCore Payments** — `PROOF_GENERATED` must remain distinct from settlement, paid HTTP outcome, and reconciliation.
-4. **Wallet/custody providers** — authorization and policy decisions must bind to the final transaction, capture, and session.
+1. **Portable multi-leg adapter** — map the same crash/resume contract onto a second bridge, delegated-funding, escrow, or auth-capture system.
+2. **AP2 token/order boundary** — local token consumption and order allocation must not imply PSP settlement.
+3. **MPP retry semantics** — payment error classes must produce deterministic retry/no-retry behavior without duplicate spend.
+4. **AgentCore Payments** — `PROOF_GENERATED` must remain distinct from settlement, paid HTTP outcome, and reconciliation.
+5. **Wallet/custody providers** — authorization and policy decisions must bind to the final transaction, capture, and session.
 
 ## Commercial assessment shape
 
@@ -174,7 +209,7 @@ A scoped Astra assessment can produce:
 
 1. a state graph for one payment path;
 2. three to five failure probes at adjacent transitions;
-3. deterministic fixtures and a machine-readable evidence report;
+3. deterministic red/green fixtures and a machine-readable evidence report;
 4. a claim-boundary section separating observed facts from inference;
 5. a regression test or upstream-ready patch where the defect is localizable.
 
