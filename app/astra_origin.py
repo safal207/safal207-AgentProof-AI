@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from typing import Any
@@ -15,8 +16,9 @@ def normalize_origin(value: Any) -> str | None:
     """Return a stable URL origin or ``None`` for malformed/non-origin input.
 
     The comparison intentionally drops path, query, and fragment; normalizes
-    scheme/host case and IDNA; and removes default HTTP(S) ports. Userinfo is
-    rejected because it is not part of a trustworthy network-principal origin.
+    scheme/host case, DNS IDNA, and IP literals; and removes default HTTP(S)
+    ports. Userinfo is rejected because it is not part of a trustworthy
+    network-principal origin.
     """
 
     if not isinstance(value, str) or not value.strip():
@@ -33,15 +35,23 @@ def normalize_origin(value: Any) -> str | None:
         return None
 
     try:
-        host = hostname.encode("idna").decode("ascii").lower()
-    except UnicodeError:
-        return None
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        try:
+            host = hostname.encode("idna").decode("ascii").lower()
+        except UnicodeError:
+            return None
+        is_ipv6 = False
+    else:
+        host = ip.compressed.lower()
+        is_ipv6 = ip.version == 6
+
     if not host:
         return None
 
     # urlsplit removes IPv6 brackets from .hostname; restore them in the
-    # serialized origin while leaving ordinary DNS names untouched.
-    serialized_host = f"[{host}]" if ":" in host else host
+    # serialized origin while leaving IPv4 and DNS names untouched.
+    serialized_host = f"[{host}]" if is_ipv6 else host
     default_port = _DEFAULT_PORTS.get(scheme)
     port_suffix = "" if port is None or port == default_port else f":{port}"
     return f"{scheme}://{serialized_host}{port_suffix}"
@@ -123,12 +133,7 @@ def verify_payment_credential_origin(
         challenge_origin = normalize_origin(challenge.value) if challenge else None
         bound_origin = normalize_origin(bound.value) if bound else None
 
-        malformed_evidence = [
-            event
-            for event, normalized in ((challenge, challenge_origin), (bound, bound_origin))
-            if event is None or normalized is None
-        ]
-        if malformed_evidence:
+        if challenge_origin is None or bound_origin is None:
             findings.append(
                 _finding(
                     code="CREDENTIAL_ORIGIN_EVIDENCE_MISSING",
@@ -183,6 +188,22 @@ def verify_payment_credential_origin(
             if event.stage == Stage.PAYMENT_ATTEMPT
             and event.key == "credential_dispatch_origin"
         ]
+        if not dispatches:
+            findings.append(
+                _finding(
+                    code="CREDENTIAL_DISPATCH_EVIDENCE_MISSING",
+                    from_stage=Stage.MANDATE_AUTHORIZATION,
+                    to_stage=Stage.PAYMENT_ATTEMPT,
+                    severity="medium",
+                    explanation=(
+                        "The trace declares credential-origin verification but does not "
+                        "identify any origin that received the reusable credential."
+                    ),
+                    operation_id=operation_id,
+                    evidence=[declaration, challenge, bound],
+                )
+            )
+
         normalized_dispatches: list[tuple[StateEvent, str]] = []
         invalid_dispatches: list[StateEvent] = []
         for event in dispatches:
@@ -205,19 +226,34 @@ def verify_payment_credential_origin(
                 )
             )
 
-        unauthorized_dispatches = [
+        identity_missing = [
             event
+            for event, _ in normalized_dispatches
+            if event.authorization_id is None and event.payment_id is None
+        ]
+        if identity_missing:
+            findings.append(
+                _finding(
+                    code="CREDENTIAL_IDENTITY_EVIDENCE_MISSING",
+                    from_stage=Stage.MANDATE_AUTHORIZATION,
+                    to_stage=Stage.PAYMENT_ATTEMPT,
+                    severity="medium",
+                    explanation=(
+                        "One or more credential dispatch events omit both authorization_id "
+                        "and payment_id, so cross-origin credential reuse cannot be excluded."
+                    ),
+                    operation_id=operation_id,
+                    evidence=[declaration, challenge, bound, *identity_missing],
+                )
+            )
+
+        unauthorized_pairs = [
+            (event, origin)
             for event, origin in normalized_dispatches
             if origin not in allowed_origins
         ]
-        if unauthorized_dispatches:
-            recipients = sorted(
-                {
-                    origin
-                    for event, origin in normalized_dispatches
-                    if event in unauthorized_dispatches
-                }
-            )
+        if unauthorized_pairs:
+            recipients = sorted({origin for _, origin in unauthorized_pairs})
             findings.append(
                 _finding(
                     code="PAYMENT_CREDENTIAL_ORIGIN_DIVERGENCE",
@@ -230,7 +266,12 @@ def verify_payment_credential_origin(
                         f"{challenge_origin!r}."
                     ),
                     operation_id=operation_id,
-                    evidence=[declaration, challenge, bound, *unauthorized_dispatches],
+                    evidence=[
+                        declaration,
+                        challenge,
+                        bound,
+                        *(event for event, _ in unauthorized_pairs),
+                    ],
                 )
             )
 
