@@ -1,0 +1,145 @@
+{
+  "trace_id": "astra-obolus-x402-ambiguous-timeout-red-001",
+  "protocol": "obolus/x402-eip3009",
+  "scenario": "A facilitator timeout is reported as failure after the first authorization may have settled. An application-level retry obtains a fresh x402 challenge, signs a new EIP-3009 nonce for the same business operation, and both payments settle before one resource is delivered.",
+  "expected_codes": [
+    "CLAIMED_FAILED_BUT_SETTLED",
+    "FRESH_AUTHORIZATION_AFTER_INDETERMINATE_SETTLEMENT",
+    "OVER_CAPTURE",
+    "RETRY_DUPLICATE_PAYMENT"
+  ],
+  "expected_verdict": "DIVERGED",
+  "events": [
+    {
+      "stage": "REQUEST",
+      "key": "business_obligation",
+      "value": "one_paid_inference",
+      "source": "obolus-gateway-contract",
+      "operation_id": "obolus-inference-001"
+    },
+    {
+      "stage": "QUOTE/CHALLENGE",
+      "key": "expected_settlement_count",
+      "value": 1,
+      "source": "obolus-x402-challenge",
+      "operation_id": "obolus-inference-001"
+    },
+    {
+      "stage": "QUOTE/CHALLENGE",
+      "key": "requires_resolution_before_fresh_authorization_after_indeterminate",
+      "value": {
+        "required": true,
+        "same_authorization_idempotent": true
+      },
+      "source": "astra-indeterminate-retry-contract",
+      "operation_id": "obolus-inference-001"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "authorized_amount_minor",
+      "value": "10000",
+      "source": "first-eip3009-authorization",
+      "operation_id": "obolus-inference-001",
+      "authorization_id": "eip3009-nonce-a"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "settle_submitted",
+      "source": "obolus-gateway",
+      "operation_id": "obolus-inference-001",
+      "attempt_id": "attempt-a",
+      "authorization_id": "eip3009-nonce-a",
+      "payload_hash": "sha256:payload-a"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_status",
+      "value": "failed",
+      "source": "facilitator-timeout-surface",
+      "operation_id": "obolus-inference-001",
+      "attempt_id": "attempt-a",
+      "authorization_id": "eip3009-nonce-a"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "retry_authorization",
+      "value": "fresh_nonce_signed",
+      "source": "reference-client-top-level-retry",
+      "operation_id": "obolus-inference-001",
+      "authorization_id": "eip3009-nonce-b"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "retry_settle_submitted",
+      "source": "obolus-gateway",
+      "operation_id": "obolus-inference-001",
+      "attempt_id": "attempt-b",
+      "authorization_id": "eip3009-nonce-b",
+      "payload_hash": "sha256:payload-b"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-chain-finality",
+      "authoritative": true,
+      "operation_id": "obolus-inference-001",
+      "authorization_id": "eip3009-nonce-a",
+      "payment_id": "tx-a"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "settled_amount_minor",
+      "value": "10000",
+      "source": "independent-chain-finality",
+      "authoritative": true,
+      "operation_id": "obolus-inference-001",
+      "authorization_id": "eip3009-nonce-a",
+      "payment_id": "tx-a"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-chain-finality",
+      "authoritative": true,
+      "operation_id": "obolus-inference-001",
+      "authorization_id": "eip3009-nonce-b",
+      "payment_id": "tx-b"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "settled_amount_minor",
+      "value": "10000",
+      "source": "independent-chain-finality",
+      "authoritative": true,
+      "operation_id": "obolus-inference-001",
+      "authorization_id": "eip3009-nonce-b",
+      "payment_id": "tx-b"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "obolus-payment-response",
+      "operation_id": "obolus-inference-001",
+      "payment_id": "tx-b"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "obolus-upstream-proxy",
+      "operation_id": "obolus-inference-001"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "complete",
+      "source": "merchant-ledger",
+      "operation_id": "obolus-inference-001"
+    }
+  ]
+}
