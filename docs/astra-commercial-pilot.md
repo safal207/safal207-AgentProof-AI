@@ -120,7 +120,7 @@ Only public GitHub channels are listed. No private or inferred email address is 
 ### 1. RunOnProof / `@AureumOne`
 
 - **Public evidence:** [x402 issue #3266](https://github.com/x402-foundation/x402/issues/3266) reports real Base-mainnet settlements that returned Bazaar `processing` but remained absent from discovery after repeated read-only checks.
-- **Transition:** `ACTUAL SETTLEMENT/FINALITY -> CLAIMED ASYNC RESULT -> RECONCILIATION`.
+- **Transition:** `ACTUAL SETTLEMENT/FINALITY -> CLAIMED RESULT -> RECONCILIATION` (the claimed result is an asynchronous `processing` state).
 - **Why first:** the operator already has paid-call evidence and explicitly avoids making another payment without justification.
 - **Public channel:** the GitHub issue above.
 - **Outreach angle:** offer a no-repeat-payment evidence normalization pass that binds the existing settlement, extension response, resource outcome, and subsequent discovery observations into one terminal/nonterminal trace.
