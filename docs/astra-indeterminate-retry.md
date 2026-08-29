@@ -64,6 +64,26 @@ Each payment attempt should expose:
 - an `authorization_id` for the spend authorization or nonce; and
 - a `payment_id` where the protocol exposes one.
 
+## Resolution rule
+
+Only independently designated authoritative finality can clear the retry
+ambiguity:
+
+- authoritative `not_settled`, `failed`, `rejected`, `expired`, or `voided`
+  allows a fresh authorization;
+- authoritative `settled` makes a fresh authorization critical;
+- a facilitator/client claim such as `failed` without authoritative finality
+  leaves the payment unresolved;
+- absence of finality also remains unresolved rather than silently permitting a
+  new payment; and
+- resubmitting the same identity is accepted only when the integration declares
+  that identity economically idempotent, including after settlement was already
+  observed.
+
+The unresolved state is checked at every adjacent retry boundary. Reusing one
+idempotent authorization does not erase the ambiguity before a later fresh
+authorization.
+
 ## Findings
 
 | Code | Meaning |
