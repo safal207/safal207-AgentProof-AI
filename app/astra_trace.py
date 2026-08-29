@@ -14,6 +14,7 @@ from .astra_spider import Finding, Stage, StateEvent, verify_causal_economic_out
 
 
 HASH_PROFILE = "astra-trace-json-v1"
+VALID_VERDICTS = frozenset({"VERIFIED", "UNRESOLVED", "DIVERGED"})
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,7 @@ class Trace:
     scenario: str
     events: tuple[StateEvent, ...]
     expected_codes: tuple[str, ...] = ()
+    expected_verdict: str | None = None
 
 
 @dataclass(frozen=True)
@@ -82,11 +84,18 @@ def trace_from_mapping(raw: Mapping[str, Any]) -> Trace:
     raw_events = raw.get("events")
     if not isinstance(raw_events, list):
         raise ValueError("events must be a JSON array")
+
     raw_expected = raw.get("expected_codes", [])
     if not isinstance(raw_expected, list) or not all(
         isinstance(code, str) and code for code in raw_expected
     ):
         raise ValueError("expected_codes must be an array of non-empty strings")
+
+    expected_verdict = raw.get("expected_verdict")
+    if expected_verdict is not None:
+        if not isinstance(expected_verdict, str) or expected_verdict not in VALID_VERDICTS:
+            allowed = ", ".join(sorted(VALID_VERDICTS))
+            raise ValueError(f"expected_verdict must be one of: {allowed}")
 
     return Trace(
         trace_id=_required_text(raw, "trace_id"),
@@ -94,6 +103,7 @@ def trace_from_mapping(raw: Mapping[str, Any]) -> Trace:
         scenario=_required_text(raw, "scenario"),
         events=tuple(state_event_from_mapping(event) for event in raw_events),
         expected_codes=tuple(raw_expected),
+        expected_verdict=expected_verdict,
     )
 
 
