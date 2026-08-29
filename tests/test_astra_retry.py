@@ -187,8 +187,70 @@ def test_fresh_authorization_after_confirmed_settlement_is_critical():
     assert finding.severity == "critical"
 
 
-def test_retry_identity_must_be_comparable():
+def test_same_authorization_after_confirmed_settlement_still_requires_idempotency():
     op = "op-5"
+    common = [
+        attempt(op, "a1", "nonce-1"),
+        payment_status(
+            op,
+            "a1",
+            "nonce-1",
+            "settled",
+            stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+            authoritative=True,
+        ),
+        attempt(op, "a2", "nonce-1"),
+    ]
+
+    unsafe = codes(
+        [contract(op, same_authorization_idempotent=False), *common]
+    )
+    safe = codes([contract(op), *common])
+    assert "INDETERMINATE_RETRY_IDEMPOTENCY_UNPROVEN" in unsafe
+    assert "INDETERMINATE_RETRY_IDEMPOTENCY_UNPROVEN" not in safe
+
+
+def test_unresolved_state_survives_same_identity_retry_until_fresh_authorization():
+    op = "op-6"
+    found = codes(
+        [
+            contract(op),
+            attempt(op, "a1", "nonce-1"),
+            payment_status(
+                op,
+                "a1",
+                "nonce-1",
+                "indeterminate",
+                stage=Stage.CLAIMED_RESULT,
+            ),
+            attempt(op, "a2", "nonce-1"),
+            attempt(op, "a3", "nonce-2"),
+        ]
+    )
+    assert "FRESH_AUTHORIZATION_AFTER_INDETERMINATE_SETTLEMENT" in found
+
+
+def test_claimed_failure_without_authoritative_finality_does_not_clear_retry_risk():
+    op = "op-7"
+    found = codes(
+        [
+            contract(op),
+            attempt(op, "a1", "nonce-1"),
+            payment_status(
+                op,
+                "a1",
+                "nonce-1",
+                "failed",
+                stage=Stage.CLAIMED_RESULT,
+            ),
+            attempt(op, "a2", "nonce-2"),
+        ]
+    )
+    assert "FRESH_AUTHORIZATION_AFTER_INDETERMINATE_SETTLEMENT" in found
+
+
+def test_retry_identity_must_be_comparable():
+    op = "op-8"
     found = codes(
         [
             contract(op),
