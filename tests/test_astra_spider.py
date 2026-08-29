@@ -10,6 +10,7 @@ EXPECTED_FIXTURES = {
     "x402_authorization_window.json",
     "x402_batch_settlement_untrusted_state.json",
     "x402_funded_but_merchant_unsettled.json",
+    "x402_funded_resume_reconciled.json",
 }
 
 
@@ -190,7 +191,10 @@ def test_all_killer_fixtures_match_their_expected_findings():
         trace = load_trace(path)
         report = build_trace_report(trace)
         assert {finding.code for finding in report.findings} == set(trace.expected_codes)
-        assert report.verdict == "DIVERGED"
+        if trace.expected_verdict is not None:
+            assert report.verdict == trace.expected_verdict
+        else:
+            assert report.verdict == "DIVERGED"
         assert len(report.evidence_hash) == 64
 
 
