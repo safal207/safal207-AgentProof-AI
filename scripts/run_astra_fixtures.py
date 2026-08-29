@@ -48,19 +48,26 @@ def main() -> int:
         expected = set(trace.expected_codes)
         missing = sorted(expected - actual)
         unexpected = sorted(actual - expected)
-        if missing or unexpected:
+        verdict_mismatch = bool(
+            trace.expected_verdict is not None
+            and report.verdict != trace.expected_verdict
+        )
+        expectation_match = not missing and not unexpected and not verdict_mismatch
+        if not expectation_match:
             failed = True
 
         if args.json:
             output = report_to_mapping(report)
             output["fixture"] = str(path)
-            output["expectation_match"] = not missing and not unexpected
+            output["expected_verdict"] = trace.expected_verdict
+            output["expectation_match"] = expectation_match
             output["missing_expected_codes"] = missing
             output["unexpected_codes"] = unexpected
+            output["verdict_mismatch"] = verdict_mismatch
             print(json.dumps(output, sort_keys=True))
         else:
             codes = ", ".join(sorted(actual)) or "none"
-            status = "PASS" if not missing and not unexpected else "FAIL"
+            status = "PASS" if expectation_match else "FAIL"
             print(
                 f"[{status}] {trace.trace_id} | {report.verdict} | "
                 f"{codes} | sha256:{report.evidence_hash}"
@@ -69,6 +76,11 @@ def main() -> int:
                 print(f"  missing expected: {', '.join(missing)}")
             if unexpected:
                 print(f"  unexpected: {', '.join(unexpected)}")
+            if verdict_mismatch:
+                print(
+                    f"  expected verdict: {trace.expected_verdict}; "
+                    f"actual: {report.verdict}"
+                )
 
     return 1 if failed else 0
 
