@@ -7,6 +7,7 @@
     "PARTIAL_SETTLEMENT_CLAIMED_COMPLETE",
     "RECOVERY_ACTION_MISSING"
   ],
+  "expected_verdict": "DIVERGED",
   "events": [
     {
       "stage": "QUOTE/CHALLENGE",
