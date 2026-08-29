@@ -1,0 +1,56 @@
+{
+  "trace_id": "astra-x402-two-leg-crash-001",
+  "protocol": "x402/eip3009-two-leg",
+  "scenario": "The funding leg settles, the agent stops before the merchant retry, and the status surface incorrectly reports payment_confirmed with no recovery action.",
+  "expected_codes": [
+    "FUNDED_BUT_MERCHANT_UNSETTLED",
+    "PARTIAL_SETTLEMENT_CLAIMED_COMPLETE",
+    "RECOVERY_ACTION_MISSING"
+  ],
+  "events": [
+    {
+      "stage": "QUOTE/CHALLENGE",
+      "key": "required_settlement_legs",
+      "value": [
+        "funding",
+        "merchant"
+      ],
+      "source": "x402-two-leg-contract",
+      "operation_id": "purchase-004"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "funding-submitted",
+      "source": "agent-runtime",
+      "operation_id": "purchase-004",
+      "attempt_id": "attempt-004-funding"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "settlement_leg_status",
+      "value": {
+        "leg": "funding",
+        "status": "settled"
+      },
+      "source": "independent-chain-finality",
+      "authoritative": true,
+      "operation_id": "purchase-004",
+      "payment_id": "funding-tx-004"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_phase",
+      "value": "payment_confirmed",
+      "source": "payment-status-api",
+      "operation_id": "purchase-004"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "next_action",
+      "value": "none",
+      "source": "payment-status-api",
+      "operation_id": "purchase-004"
+    }
+  ]
+}
