@@ -1,0 +1,113 @@
+{
+  "trace_id": "astra-x402-two-leg-recovery-001",
+  "protocol": "x402/eip3009-two-leg",
+  "scenario": "Normalized red-to-green recovery shape: one funding leg becomes retryable, the original operation resumes, the merchant settles once, delivery completes, and reconciliation closes.",
+  "expected_codes": [],
+  "expected_verdict": "VERIFIED",
+  "events": [
+    {
+      "stage": "QUOTE/CHALLENGE",
+      "key": "required_settlement_legs",
+      "value": [
+        "funding",
+        "merchant"
+      ],
+      "source": "x402-two-leg-contract",
+      "operation_id": "purchase-005"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "authorized_amount_minor",
+      "value": "1000",
+      "source": "delegated-payment-mandate",
+      "operation_id": "purchase-005",
+      "authorization_id": "authorization-005"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "funding-submitted",
+      "source": "agent-runtime",
+      "operation_id": "purchase-005",
+      "attempt_id": "attempt-005-funding"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "settlement_leg_status",
+      "value": {
+        "leg": "funding",
+        "status": "settled"
+      },
+      "source": "independent-chain-finality",
+      "authoritative": true,
+      "operation_id": "purchase-005",
+      "payment_id": "funding-tx-005"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_phase",
+      "value": "funded_but_unsettled",
+      "source": "server-derived-status",
+      "operation_id": "purchase-005"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "next_action",
+      "value": "retry_original_x402_request",
+      "source": "server-derived-status",
+      "operation_id": "purchase-005"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "resume-original-operation",
+      "source": "agent-runtime",
+      "operation_id": "purchase-005",
+      "attempt_id": "attempt-005-resume",
+      "authorization_id": "authorization-005"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "settlement_leg_status",
+      "value": {
+        "leg": "merchant",
+        "status": "settled"
+      },
+      "source": "independent-chain-finality",
+      "authoritative": true,
+      "operation_id": "purchase-005",
+      "payment_id": "merchant-tx-005"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-chain-finality",
+      "authoritative": true,
+      "operation_id": "purchase-005",
+      "payment_id": "merchant-tx-005"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "merchant-payment-receipt",
+      "operation_id": "purchase-005",
+      "payment_id": "merchant-tx-005"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "merchant-resource-log",
+      "operation_id": "purchase-005"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "complete",
+      "source": "terminal-reconciliation-record",
+      "operation_id": "purchase-005"
+    }
+  ]
+}
