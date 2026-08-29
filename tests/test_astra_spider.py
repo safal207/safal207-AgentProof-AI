@@ -6,6 +6,8 @@ from app.astra_trace import build_trace_report, load_trace
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "astra"
 EXPECTED_FIXTURES = {
+    "ap2_safe_resume_reconciled.json",
+    "ap2_token_consumed_psp_failed.json",
     "x402_auth_capture_delivery_before_capture.json",
     "x402_authorization_window.json",
     "x402_batch_settlement_untrusted_state.json",
