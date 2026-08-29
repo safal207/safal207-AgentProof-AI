@@ -1,0 +1,112 @@
+{
+  "trace_id": "astra-mppx-challenge-origin-002",
+  "protocol": "MPP/x402 CLI",
+  "scenario": "Origin A redirects to B; B issues the accepted challenge, the credential retry is sent directly to B with redirect traversal disabled, and the resulting settlement, receipt, delivery, and reconciliation agree.",
+  "expected_codes": [],
+  "expected_verdict": "VERIFIED",
+  "events": [
+    {
+      "stage": "REQUEST",
+      "key": "initial_request_origin",
+      "value": "https://redirect.example",
+      "source": "mppx-cli",
+      "operation_id": "paid-cli-call-002"
+    },
+    {
+      "stage": "QUOTE/CHALLENGE",
+      "key": "requires_credential_origin_binding",
+      "value": true,
+      "source": "x402-origin-contract",
+      "operation_id": "paid-cli-call-002"
+    },
+    {
+      "stage": "QUOTE/CHALLENGE",
+      "key": "challenge_origin",
+      "value": "HTTPS://Merchant.Example:443/paid?offer=1",
+      "source": "x402-payment-required",
+      "operation_id": "paid-cli-call-002"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "credential_bound_origin",
+      "value": "https://merchant.example",
+      "source": "accepted-x402-challenge",
+      "operation_id": "paid-cli-call-002",
+      "authorization_id": "eip3009-nonce-002"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "credential_retry",
+      "source": "mppx-cli",
+      "operation_id": "paid-cli-call-002",
+      "attempt_id": "attempt-002",
+      "authorization_id": "eip3009-nonce-002",
+      "payment_id": "eip3009-nonce-002"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "credential_dispatch_origin",
+      "value": "https://MERCHANT.example:443/paid",
+      "source": "challenge-origin-request-log",
+      "operation_id": "paid-cli-call-002",
+      "attempt_id": "attempt-002",
+      "authorization_id": "eip3009-nonce-002",
+      "payment_id": "eip3009-nonce-002"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "x402-payment-response",
+      "operation_id": "paid-cli-call-002",
+      "attempt_id": "attempt-002",
+      "authorization_id": "eip3009-nonce-002",
+      "payment_id": "eip3009-nonce-002"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-chain-or-facilitator-check",
+      "authoritative": true,
+      "operation_id": "paid-cli-call-002",
+      "attempt_id": "attempt-002",
+      "authorization_id": "eip3009-nonce-002",
+      "payment_id": "eip3009-nonce-002"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "credential_consumer_origin",
+      "value": "https://merchant.example",
+      "source": "independent-settlement-attribution",
+      "authoritative": true,
+      "operation_id": "paid-cli-call-002",
+      "attempt_id": "attempt-002",
+      "authorization_id": "eip3009-nonce-002",
+      "payment_id": "eip3009-nonce-002"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "x402-payment-response",
+      "operation_id": "paid-cli-call-002",
+      "payment_id": "eip3009-nonce-002"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "paid-resource-client",
+      "operation_id": "paid-cli-call-002"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "complete",
+      "source": "operation-ledger",
+      "operation_id": "paid-cli-call-002"
+    }
+  ]
+}
