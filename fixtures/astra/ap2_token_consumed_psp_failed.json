@@ -1,0 +1,92 @@
+{
+  "trace_id": "astra-ap2-terminal-commitment-001",
+  "protocol": "AP2/x402-human-not-present",
+  "scenario": "The merchant sample persists payment token used and allocates an order before the PSP call; the controlled PSP path confirms no settlement and the same token is non-retryable.",
+  "expected_codes": [
+    "NONSETTLED_OPERATION_MARKED_NONRETRYABLE",
+    "TERMINAL_COMMITMENT_WITHOUT_SETTLEMENT"
+  ],
+  "expected_verdict": "DIVERGED",
+  "events": [
+    {
+      "stage": "QUOTE/CHALLENGE",
+      "key": "requires_settlement_before_terminal_commitment",
+      "value": true,
+      "source": "ap2-checkout-contract",
+      "operation_id": "ap2-purchase-001"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "expected_settlement_count",
+      "value": 1,
+      "source": "ap2-checkout-contract",
+      "operation_id": "ap2-purchase-001"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "submitted",
+      "source": "ap2-merchant-agent",
+      "attempt_id": "attempt-001",
+      "operation_id": "ap2-purchase-001",
+      "authorization_id": "authorization-001"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "terminal_commitment",
+      "value": {
+        "component": "payment_token",
+        "status": "used",
+        "terminal": true
+      },
+      "source": "ap2-token-store",
+      "authoritative": true,
+      "attempt_id": "attempt-001",
+      "operation_id": "ap2-purchase-001",
+      "authorization_id": "authorization-001"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "terminal_commitment",
+      "value": {
+        "component": "order",
+        "status": "allocated",
+        "terminal": true,
+        "reference": "order-001"
+      },
+      "source": "ap2-order-store",
+      "authoritative": true,
+      "attempt_id": "attempt-001",
+      "operation_id": "ap2-purchase-001",
+      "authorization_id": "authorization-001"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_status",
+      "value": "not_settled",
+      "source": "ap2-merchant-agent",
+      "attempt_id": "attempt-001",
+      "operation_id": "ap2-purchase-001",
+      "authorization_id": "authorization-001"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "not_settled",
+      "source": "independent-psp-or-chain-evidence",
+      "authoritative": true,
+      "attempt_id": "attempt-001",
+      "operation_id": "ap2-purchase-001",
+      "authorization_id": "authorization-001"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "next_action",
+      "value": "token_already_used",
+      "source": "ap2-merchant-agent",
+      "attempt_id": "attempt-001",
+      "operation_id": "ap2-purchase-001",
+      "authorization_id": "authorization-001"
+    }
+  ]
+}
