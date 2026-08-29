@@ -1,0 +1,148 @@
+{
+  "trace_id": "astra-ap2-safe-resume-002",
+  "protocol": "AP2/x402-human-not-present",
+  "scenario": "A failed settlement remains retryable; the same operation and authorization resume, one PSP payment settles, terminal token/order state follows finality, and delivery reconciles.",
+  "expected_codes": [],
+  "expected_verdict": "VERIFIED",
+  "events": [
+    {
+      "stage": "QUOTE/CHALLENGE",
+      "key": "requires_settlement_before_terminal_commitment",
+      "value": true,
+      "source": "ap2-checkout-contract",
+      "operation_id": "ap2-purchase-002"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "expected_settlement_count",
+      "value": 1,
+      "source": "ap2-checkout-contract",
+      "operation_id": "ap2-purchase-002"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "submitted",
+      "source": "ap2-merchant-agent",
+      "attempt_id": "attempt-002-a",
+      "operation_id": "ap2-purchase-002",
+      "authorization_id": "authorization-002"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_status",
+      "value": "not_settled",
+      "source": "ap2-merchant-agent",
+      "attempt_id": "attempt-002-a",
+      "operation_id": "ap2-purchase-002",
+      "authorization_id": "authorization-002"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "not_settled",
+      "source": "independent-psp-or-chain-evidence",
+      "authoritative": true,
+      "attempt_id": "attempt-002-a",
+      "operation_id": "ap2-purchase-002",
+      "authorization_id": "authorization-002"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "next_action",
+      "value": "retry_settlement",
+      "source": "ap2-merchant-agent",
+      "attempt_id": "attempt-002-a",
+      "operation_id": "ap2-purchase-002",
+      "authorization_id": "authorization-002"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "submitted",
+      "source": "ap2-merchant-agent",
+      "attempt_id": "attempt-002-b",
+      "operation_id": "ap2-purchase-002",
+      "authorization_id": "authorization-002"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "ap2-merchant-agent",
+      "attempt_id": "attempt-002-b",
+      "operation_id": "ap2-purchase-002",
+      "authorization_id": "authorization-002"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-psp-or-chain-evidence",
+      "authoritative": true,
+      "attempt_id": "attempt-002-b",
+      "payment_id": "psp-payment-002",
+      "operation_id": "ap2-purchase-002",
+      "authorization_id": "authorization-002"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "terminal_commitment",
+      "value": {
+        "component": "payment_token",
+        "status": "used",
+        "terminal": true
+      },
+      "source": "ap2-token-store",
+      "authoritative": true,
+      "attempt_id": "attempt-002-b",
+      "operation_id": "ap2-purchase-002",
+      "authorization_id": "authorization-002"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "terminal_commitment",
+      "value": {
+        "component": "order",
+        "status": "allocated",
+        "terminal": true,
+        "reference": "order-002"
+      },
+      "source": "ap2-order-store",
+      "authoritative": true,
+      "attempt_id": "attempt-002-b",
+      "operation_id": "ap2-purchase-002",
+      "authorization_id": "authorization-002"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "next_action",
+      "value": "complete",
+      "source": "ap2-merchant-agent",
+      "attempt_id": "attempt-002-b",
+      "operation_id": "ap2-purchase-002",
+      "authorization_id": "authorization-002"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "ap2-checkout-receipt",
+      "operation_id": "ap2-purchase-002"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "ap2-merchant-delivery",
+      "operation_id": "ap2-purchase-002"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "complete",
+      "source": "ap2-reconciliation-ledger",
+      "operation_id": "ap2-purchase-002"
+    }
+  ]
+}
