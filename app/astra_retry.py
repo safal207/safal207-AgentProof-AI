@@ -6,18 +6,6 @@ from typing import Any
 from .astra_verifier import Finding, Stage, StateEvent
 
 
-_INDETERMINATE_STATUSES = {
-    "connection_lost",
-    "indeterminate",
-    "network_error",
-    "pending_reconciliation",
-    "settlement_unavailable",
-    "timed_out",
-    "timeout",
-    "unavailable",
-    "unknown",
-}
-
 _SETTLED_STATUSES = {
     "captured",
     "complete",
@@ -65,17 +53,22 @@ def _scope(events: list[StateEvent], operation_id: str | None) -> list[StateEven
 
 
 def _matches_attempt(event: StateEvent, attempt: StateEvent) -> bool:
-    compared = False
-    for field in ("payment_id", "attempt_id", "authorization_id"):
+    """Match economic identity first, then fall back to transport attempt identity."""
+
+    economic_compared = False
+    for field in ("payment_id", "authorization_id"):
         event_value = getattr(event, field)
         attempt_value = getattr(attempt, field)
         if event_value is None or attempt_value is None:
             continue
-        compared = True
+        economic_compared = True
         if event_value != attempt_value:
             return False
-    if compared:
+    if economic_compared:
         return True
+
+    if event.attempt_id is not None and attempt.attempt_id is not None:
+        return event.attempt_id == attempt.attempt_id
     return event.operation_id == attempt.operation_id
 
 
@@ -116,13 +109,19 @@ def _finding(
 def verify_indeterminate_retry_outcome(
     events: Iterable[StateEvent],
 ) -> list[Finding]:
-    """Verify retry authorization identity after an indeterminate settlement result.
+    """Verify retry authorization identity while prior settlement is unresolved.
 
     Protocol adapters opt in with a
     ``requires_resolution_before_fresh_authorization_after_indeterminate``
     event at QUOTE/CHALLENGE or MANDATE/AUTHORIZATION. The optional contract
     field ``same_authorization_idempotent`` declares that resubmitting the same
     payment authorization cannot create another economic charge on the rail.
+
+    Every retry boundary is checked. An authoritative terminal settlement
+    observation takes precedence over transport or facilitator claims. Without
+    that terminal evidence, the prior payment remains unresolved; a fresh
+    authorization is unsafe, while reuse of the same identity is accepted only
+    when the integration explicitly declares economic idempotency.
 
     This verifier detects an unsafe retry contract. It does not claim that a
     duplicate payment occurred unless separate authoritative settlement events
@@ -178,45 +177,18 @@ def verify_indeterminate_retry_outcome(
 
             last_claim = relevant_claims[-1] if relevant_claims else None
             last_finality = relevant_finality[-1] if relevant_finality else None
-            claim_status = _status(last_claim.value) if last_claim else None
             finality_status = _status(last_finality.value) if last_finality else None
-            indeterminate = (
-                claim_status in _INDETERMINATE_STATUSES
-                or finality_status in _INDETERMINATE_STATUSES
-            )
-            if not indeterminate:
-                continue
-
             fresh_identity = _fresh_identity(previous, retry)
+
             if fresh_identity is None:
                 findings.append(
                     _finding(
                         code="RETRY_PAYMENT_IDENTITY_UNRESOLVED",
                         severity="medium",
                         explanation=(
-                            "A retry followed an indeterminate settlement result, but the "
-                            "trace does not expose comparable authorization_id or payment_id "
-                            "values for the original and retry attempts."
-                        ),
-                        operation_id=operation_id,
-                        evidence=[declaration, previous, last_claim, last_finality, retry],
-                    )
-                )
-                continue
-
-            if not fresh_identity:
-                if finality_status in _SETTLED_STATUSES | _NOT_SETTLED_STATUSES:
-                    continue
-                if same_authorization_idempotent:
-                    continue
-                findings.append(
-                    _finding(
-                        code="INDETERMINATE_RETRY_IDEMPOTENCY_UNPROVEN",
-                        severity="medium",
-                        explanation=(
-                            "The retry reused the same payment identity after an "
-                            "indeterminate result, but the protocol contract does not "
-                            "establish idempotent settlement for that identity."
+                            "A retry followed a payment attempt, but the trace does not "
+                            "expose comparable authorization_id or payment_id values for "
+                            "the original and retry attempts."
                         ),
                         operation_id=operation_id,
                         evidence=[declaration, previous, last_claim, last_finality, retry],
@@ -225,6 +197,27 @@ def verify_indeterminate_retry_outcome(
                 continue
 
             if finality_status in _NOT_SETTLED_STATUSES:
+                # Independent evidence says the first authorization did not settle;
+                # either the same or a fresh authorization may now be attempted.
+                continue
+
+            if not fresh_identity:
+                if same_authorization_idempotent:
+                    continue
+                findings.append(
+                    _finding(
+                        code="INDETERMINATE_RETRY_IDEMPOTENCY_UNPROVEN",
+                        severity="medium",
+                        explanation=(
+                            "The retry reused the same payment identity, but the protocol "
+                            "contract does not establish idempotent settlement for that "
+                            "identity. This remains unsafe whether the prior state is "
+                            "unresolved or already settled."
+                        ),
+                        operation_id=operation_id,
+                        evidence=[declaration, previous, last_claim, last_finality, retry],
+                    )
+                )
                 continue
 
             if finality_status in _SETTLED_STATUSES:
