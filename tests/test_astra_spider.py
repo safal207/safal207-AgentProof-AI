@@ -13,6 +13,9 @@ EXPECTED_FIXTURES = {
     "x402_batch_settlement_untrusted_state.json",
     "x402_funded_but_merchant_unsettled.json",
     "x402_funded_resume_reconciled.json",
+    "x402_indeterminate_fresh_authorization.json",
+    "x402_indeterminate_resolved_then_reauthorized.json",
+    "x402_indeterminate_same_authorization_resume.json",
 }
 
 
