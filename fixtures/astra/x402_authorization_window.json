@@ -1,0 +1,32 @@
+{
+  "trace_id": "astra-x402-eip3009-window-001",
+  "protocol": "x402/exact-evm",
+  "scenario": "The EIP-3009 authorization remains valid for one hour although the challenge advertises a 30-second payment window.",
+  "expected_codes": [
+    "AUTHORIZATION_OUTLIVES_CHALLENGE"
+  ],
+  "events": [
+    {
+      "stage": "QUOTE/CHALLENGE",
+      "key": "challenge_issued_at",
+      "value": 1000,
+      "source": "resource-server-402",
+      "operation_id": "purchase-002"
+    },
+    {
+      "stage": "QUOTE/CHALLENGE",
+      "key": "max_timeout_seconds",
+      "value": 30,
+      "source": "resource-server-402",
+      "operation_id": "purchase-002"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "authorization_valid_before",
+      "value": 4600,
+      "source": "go-sdk-eip3009-payload",
+      "operation_id": "purchase-002",
+      "authorization_id": "auth-002"
+    }
+  ]
+}

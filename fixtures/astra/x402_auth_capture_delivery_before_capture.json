@@ -1,0 +1,41 @@
+{
+  "trace_id": "astra-x402-auth-capture-001",
+  "protocol": "x402/auth-capture",
+  "scenario": "The resource is delivered in escrow mode and the worker terminates before deferred capture is confirmed.",
+  "expected_codes": [
+    "DELIVERED_WITHOUT_CAPTURE"
+  ],
+  "events": [
+    {
+      "stage": "QUOTE/CHALLENGE",
+      "key": "payment_flow",
+      "value": "escrow",
+      "source": "resource-server-402",
+      "operation_id": "job-003"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "capture_mode",
+      "value": "deferred",
+      "source": "merchant-durable-config",
+      "operation_id": "job-003",
+      "authorization_id": "hold-003"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "capture_status",
+      "value": "authorized",
+      "source": "independent-psp-hold-record",
+      "authoritative": true,
+      "operation_id": "job-003",
+      "authorization_id": "hold-003"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "merchant-resource-log",
+      "operation_id": "job-003"
+    }
+  ]
+}
