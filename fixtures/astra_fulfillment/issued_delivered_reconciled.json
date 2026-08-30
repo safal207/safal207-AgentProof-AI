@@ -1,0 +1,70 @@
+{
+  "trace_id": "astra-provider-issued-delivered-001",
+  "protocol": "provider-neutral/card-fulfillment",
+  "scenario": "One operation settles, the provider issues exactly one resource, the client receives it, and reconciliation closes terminally.",
+  "expected_codes": [],
+  "expected_verdict": "VERIFIED",
+  "events": [
+    {
+      "stage": "REQUEST",
+      "key": "requested_product",
+      "value": "virtual_card",
+      "source": "merchant-request",
+      "operation_id": "card-operation-delivered-001"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "submitted",
+      "source": "payment-client",
+      "operation_id": "card-operation-delivered-001",
+      "attempt_id": "attempt-delivered-001"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "facilitator-response",
+      "operation_id": "card-operation-delivered-001"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "operation_id": "card-operation-delivered-001",
+      "payment_id": "payment-delivered-001"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "merchant-receipt",
+      "operation_id": "card-operation-delivered-001"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "issuer_status",
+      "value": "issued",
+      "source": "issuer-terminal-record",
+      "authoritative": true,
+      "operation_id": "card-operation-delivered-001"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "client-delivery-record",
+      "operation_id": "card-operation-delivered-001"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "complete",
+      "source": "merchant-ledger",
+      "authoritative": true,
+      "operation_id": "card-operation-delivered-001"
+    }
+  ]
+}
