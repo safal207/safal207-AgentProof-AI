@@ -44,6 +44,16 @@ def test_asgcard_fixture_is_bound_to_the_public_stellar_snapshot():
     assert amount["value"] == 3588
 
 
+def test_soroban_settlement_is_not_lost_when_payment_view_is_empty():
+    snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    ledger_view = snapshot["ledger_view_divergence"]
+
+    assert ledger_view["account_payments_candidate_outgoing_usdc_count"] == 0
+    assert ledger_view["account_payments_matching_record_type"] == "invoke_host_function"
+    assert ledger_view["account_effects_matching_debit_count"] == 1
+    assert ledger_view["account_effects_matching_credit_count"] == 1
+
+
 def test_unattributed_credit_does_not_claim_refund_or_reconciliation():
     snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     credit = snapshot["post_incident_observation"]
