@@ -54,8 +54,9 @@ that identity, Astra can identify a recipient but cannot exclude reuse of the
 same credential across recipients. The dispatch must share at least one typed
 identifier with the bound credential, and no shared typed identifier may
 conflict. The two fields are separate identity namespaces: equal text in
-`authorization_id` and `payment_id` does not create a match. A scoped delegate
-must match the same declared field on the target event.
+`authorization_id` and `payment_id` does not create a match. The same typed
+identity rule applies to authoritative settlement-consumer evidence. A scoped
+delegate must match the same declared field on the target event.
 
 An intermediary is admitted only through an authoritative
 `authorized_credential_delegate_origin` event. Delegate evidence may be global
@@ -89,6 +90,8 @@ Astra compares HTTP(S) origins, not full resource URLs:
 | `CREDENTIAL_IDENTITY_DIVERGENCE` | A typed dispatch identifier conflicts with the credential binding. |
 | `PAYMENT_CREDENTIAL_ORIGIN_DIVERGENCE` | A reusable credential was delivered outside the accepted challenge/delegation boundary. |
 | `CROSS_ORIGIN_CREDENTIAL_REUSE` | One payment identity was dispatched to multiple origins, creating a consumption race. |
+| `SETTLEMENT_CREDENTIAL_IDENTITY_UNRESOLVED` | Consumer-origin evidence cannot be tied to the accepted credential through a common typed identifier. |
+| `SETTLEMENT_CREDENTIAL_IDENTITY_DIVERGENCE` | Authoritative consumer-origin evidence refers to a conflicting credential identity. |
 | `SETTLEMENT_CONSUMER_ORIGIN_DIVERGENCE` | Authoritative evidence attributes credential consumption to an unauthorized origin. |
 
 Origin exposure is kept separate from economic outcome:
@@ -98,7 +101,9 @@ Origin exposure is kept separate from economic outcome:
 - dispatch divergence proves the wrong principal received the credential;
 - cross-origin reuse proves multiple principals received the same typed payment
   identity;
-- none of those findings alone proves that money moved; and
+- settlement-consumer identity divergence proves that a correct network origin
+  cannot be used to attribute consumption of a different credential;
+- none of the dispatch findings alone proves that money moved; and
 - confirmed settlement by the wrong principal requires authoritative consumer
   attribution.
 
@@ -129,7 +134,7 @@ origin A -> redirect -> origin B
 origin B issues challenge
 credential-bearing retry goes directly to B
 redirect traversal is disabled for that retry
-one settlement is attributed to B
+one settlement for the same typed credential is attributed to B
 receipt, resource delivery, and reconciliation agree
 -> VERIFIED
 ```
@@ -138,9 +143,9 @@ receipt, resource delivery, and reconciliation agree
 
 This profile proves only what the supplied events support. An application log
 showing a header at origin A is dispatch evidence, not settlement evidence. A
-chain transaction proves value movement, but wrong-origin economic consumption
-requires a trustworthy binding between the payment identity and the consuming
-origin.
+chain transaction proves value movement, but wrong-origin or wrong-credential
+economic consumption requires a trustworthy binding between the payment
+identity and the consuming origin.
 
 Public working channel: `wevm/mppx#850`, owned by `@brendanjryan`. No email is
 asserted by this profile.
