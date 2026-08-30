@@ -1,0 +1,151 @@
+name: Apply Astra origin identity-gate hotfix
+
+on:
+  push:
+    branches:
+      - fix/astra-origin-settlement-identity-gate
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out hotfix branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/astra-origin-settlement-identity-gate
+          fetch-depth: 0
+
+      - name: Apply minimal code fix and regression
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path("app/astra_origin.py")
+          text = source.read_text(encoding="utf-8")
+          old = '''        unauthorized_consumers: list[StateEvent] = []
+          for event in consumers:
+              origin = normalize_origin(event.value)
+              allowed = {
+                  challenge_origin,
+                  *_delegate_origins(delegate_events, event),
+              }
+              if origin is None or origin not in allowed:
+                  unauthorized_consumers.append(event)
+          '''
+          new = '''        unauthorized_consumers: list[StateEvent] = []
+          for event, relation in consumer_relations:
+              if relation != "matched":
+                  continue
+              origin = normalize_origin(event.value)
+              allowed = {
+                  challenge_origin,
+                  *_delegate_origins(delegate_events, event),
+              }
+              if origin is None or origin not in allowed:
+                  unauthorized_consumers.append(event)
+          '''
+          matches = text.count(old)
+          if matches != 1:
+              raise SystemExit(
+                  f"expected exactly one settlement-consumer block, found {matches}"
+              )
+          source.write_text(text.replace(old, new), encoding="utf-8")
+
+          test = Path("tests/test_astra_origin_settlement_identity_gate.py")
+          test.write_text(
+              '''from app.astra_spider import (
+              Stage,
+              StateEvent,
+              verify_causal_economic_outcome,
+          )
+
+
+          def _event(stage, key, value, source, **kwargs):
+              return StateEvent(
+                  stage=stage,
+                  key=key,
+                  value=value,
+                  source=source,
+                  **kwargs,
+              )
+
+
+          def test_divergent_settlement_identity_does_not_claim_wrong_origin():
+              operation_id = "op-settlement-identity-gate"
+              findings = verify_causal_economic_outcome(
+                  [
+                      _event(
+                          Stage.QUOTE_CHALLENGE,
+                          "requires_credential_origin_binding",
+                          True,
+                          "origin-contract",
+                          operation_id=operation_id,
+                      ),
+                      _event(
+                          Stage.QUOTE_CHALLENGE,
+                          "challenge_origin",
+                          "https://merchant.example",
+                          "challenge",
+                          operation_id=operation_id,
+                      ),
+                      _event(
+                          Stage.MANDATE_AUTHORIZATION,
+                          "credential_bound_origin",
+                          "https://merchant.example",
+                          "authorization",
+                          operation_id=operation_id,
+                          authorization_id="auth-1",
+                      ),
+                      _event(
+                          Stage.PAYMENT_ATTEMPT,
+                          "credential_dispatch_origin",
+                          "https://merchant.example",
+                          "request-log",
+                          operation_id=operation_id,
+                          attempt_id="attempt-1",
+                          authorization_id="auth-1",
+                      ),
+                      _event(
+                          Stage.ACTUAL_SETTLEMENT_FINALITY,
+                          "credential_consumer_origin",
+                          "https://redirect.example",
+                          "settlement-attribution",
+                          authoritative=True,
+                          operation_id=operation_id,
+                          authorization_id="auth-2",
+                      ),
+                  ]
+              )
+              found = {finding.code for finding in findings}
+
+              assert "SETTLEMENT_CREDENTIAL_IDENTITY_DIVERGENCE" in found
+              assert "SETTLEMENT_CONSUMER_ORIGIN_DIVERGENCE" not in found
+          ''',
+              encoding="utf-8",
+          )
+
+          Path(".github/workflows/apply-astra-origin-hotfix.yml").unlink()
+          PY
+
+      - name: Run focused regression suite
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          pytest -q \
+            tests/test_astra_origin_settlement_identity_gate.py \
+            tests/test_astra_origin.py
+
+      - name: Commit validated hotfix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(astra): gate settlement origin on typed identity"
+          git push origin HEAD:fix/astra-origin-settlement-identity-gate
