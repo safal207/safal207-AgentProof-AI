@@ -45,6 +45,23 @@ That establishes successful economic movement. It does not, by itself, establish
 
 At `2026-08-30T02:01:49Z`, the wallet received a separate `9.7000000 USDC` credit. The public evidence does not bind that credit to the failed card-create operation. Astra therefore records it as an **unattributed post-incident credit**, not as a refund or completed reconciliation.
 
+## Adapter lesson: one ledger view was insufficient
+
+A naive adapter that selected only classic outgoing `payment` records found zero candidate outgoing USDC payments for the incident transaction. Horizon represented the relevant operation as `invoke_host_function`.
+
+The value movement became visible in the transaction effects:
+
+```text
+account_debited  35.8800000 USDC
+account_credited 35.8800000 USDC
+```
+
+Therefore, Astra's Stellar adapter rule is:
+
+> Absence from the account payment stream is not proof of non-settlement when the operation executes through Soroban. Resolve the transaction effects or contract events before assigning finality.
+
+This is an observability boundary, not a claim that Horizon is defective. Different ledger views expose different parts of the same successful transaction.
+
 ## State graph
 
 ```text
