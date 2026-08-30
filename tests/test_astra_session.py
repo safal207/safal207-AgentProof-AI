@@ -149,6 +149,7 @@ def test_all_principal_mismatches_are_separated():
         [
             contract(),
             binding(),
+            use(),
             use(
                 operation_id="op-2",
                 user_id="user-b",
