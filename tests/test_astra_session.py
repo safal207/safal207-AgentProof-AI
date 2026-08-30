@@ -79,6 +79,7 @@ def use(
     agent_id="research-agent",
     payment_instrument_id="instrument-a",
     merchant_origin="https://merchant.example/paid",
+    payment_id=None,
 ):
     return event(
         Stage.PAYMENT_ATTEMPT,
@@ -94,7 +95,49 @@ def use(
         session_id=session_id,
         operation_id=operation_id,
         attempt_id=f"attempt-{operation_id}",
+        payment_id=payment_id,
     )
+
+
+def settled_finality(
+    *,
+    session_id="session-a",
+    operation_id="op-1",
+    payment_id="payment-1",
+):
+    return event(
+        Stage.ACTUAL_SETTLEMENT_FINALITY,
+        "payment_status",
+        "settled",
+        "independent-finality",
+        authoritative=True,
+        session_id=session_id,
+        operation_id=operation_id,
+        attempt_id=f"attempt-{operation_id}",
+        payment_id=payment_id,
+    )
+
+
+def completed_outcome(operation_id="op-1", session_id="session-a"):
+    return [
+        event(
+            Stage.RESOURCE_OUTCOME_DELIVERY,
+            "delivery_status",
+            "delivered",
+            "merchant",
+            session_id=session_id,
+            operation_id=operation_id,
+        ),
+        event(
+            Stage.RECONCILIATION,
+            "status",
+            "complete",
+            "ledger",
+            authoritative=True,
+            session_id=session_id,
+            operation_id=operation_id,
+        ),
+    ]
 
 
 def test_missing_authoritative_binding_is_unresolved():
@@ -169,6 +212,18 @@ def test_all_principal_mismatches_are_separated():
     }
 
 
+def test_conflicting_contract_dimensions_fail_closed():
+    found = codes(
+        [
+            contract(dimensions=["agent_id"]),
+            contract(dimensions=["user_id"]),
+            binding(),
+            use(),
+        ]
+    )
+    assert found == {"PAYMENT_SESSION_CONTRACT_CONFLICT"}
+
+
 def test_conflicting_authoritative_bindings_fail_closed():
     found = codes(
         [
@@ -212,6 +267,45 @@ def test_operation_scoped_session_reuse_is_detected():
         "SESSION_ID_REUSED_ACROSS_OPERATIONS",
         "SESSION_OPERATION_CROSSOVER",
     }
+
+
+def test_matching_payment_settled_under_another_session_is_critical():
+    found = codes(
+        [
+            contract(),
+            binding(),
+            use(payment_id="payment-1"),
+            settled_finality(session_id="session-b"),
+            *completed_outcome(),
+        ]
+    )
+    assert found == {"SETTLEMENT_SESSION_CROSSOVER"}
+
+
+def test_settlement_without_session_attribution_is_unresolved():
+    found = codes(
+        [
+            contract(),
+            binding(),
+            use(payment_id="payment-1"),
+            settled_finality(session_id=None),
+            *completed_outcome(),
+        ]
+    )
+    assert found == {"SETTLEMENT_SESSION_BINDING_UNRESOLVED"}
+
+
+def test_unrelated_settlement_does_not_create_session_claim():
+    found = codes(
+        [
+            contract(),
+            binding(),
+            use(payment_id="payment-1"),
+            settled_finality(session_id="session-b", payment_id="payment-2"),
+            *completed_outcome(),
+        ]
+    )
+    assert found == set()
 
 
 def test_global_contract_rejects_use_without_session_identity():
