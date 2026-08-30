@@ -3,6 +3,7 @@
 from collections.abc import Iterable
 from dataclasses import replace
 
+from .astra_attribution import verify_settlement_attribution_outcome
 from .astra_commitment import verify_terminal_commitment_outcome
 from .astra_multileg import verify_multileg_causal_outcome
 from .astra_retry import verify_indeterminate_retry_outcome
@@ -21,22 +22,47 @@ _CLAIM_STATUS_KEYS = frozenset({"operation_status", "outcome_status"})
 def _normalize_generic_outcome_claims(
     events: tuple[StateEvent, ...],
 ) -> tuple[StateEvent, ...]:
-    """Map generic terminal outcome claims onto the base claim/finality edge.
+    """Map a generic outcome claim only when finality is operation-bound.
 
-    The protocol-neutral state graph permits a component to claim that the
-    overall operation failed without claiming that payment itself failed. The
-    base verifier historically used ``payment_status`` as its terminal claim
-    key. Normalizing only the key preserves that semantic distinction in the
-    source evidence while reusing the same adjacent-state invariant:
-    a failed claimed outcome can still conflict with authoritative settlement.
+    A failed business operation and a successful ledger movement can coexist.
+    Reusing the base claim/finality invariant is safe only when authoritative
+    payment finality carries the same ``operation_id`` as the generic claim, or
+    when both sides are intentionally trace-global. Unbound candidate
+    settlements are handled by the attribution verifier instead of being
+    promoted into operation-level truth.
     """
 
-    return tuple(
-        replace(event, key="payment_status")
-        if event.stage == Stage.CLAIMED_RESULT and event.key in _CLAIM_STATUS_KEYS
-        else event
+    operation_bound_finality = {
+        event.operation_id
+        for event in events
+        if event.stage == Stage.ACTUAL_SETTLEMENT_FINALITY
+        and event.key == "payment_status"
+        and event.authoritative
+        and event.operation_id is not None
+    }
+    has_global_finality = any(
+        event.stage == Stage.ACTUAL_SETTLEMENT_FINALITY
+        and event.key == "payment_status"
+        and event.authoritative
+        and event.operation_id is None
         for event in events
     )
+
+    normalized: list[StateEvent] = []
+    for event in events:
+        should_normalize = (
+            event.stage == Stage.CLAIMED_RESULT
+            and event.key in _CLAIM_STATUS_KEYS
+            and (
+                event.operation_id in operation_bound_finality
+                if event.operation_id is not None
+                else has_global_finality
+            )
+        )
+        normalized.append(
+            replace(event, key="payment_status") if should_normalize else event
+        )
+    return tuple(normalized)
 
 
 def verify_causal_economic_outcome(
@@ -51,6 +77,7 @@ def verify_causal_economic_outcome(
         *verify_multileg_causal_outcome(materialized),
         *verify_terminal_commitment_outcome(materialized),
         *verify_indeterminate_retry_outcome(materialized),
+        *verify_settlement_attribution_outcome(materialized),
     ]
 
 
@@ -62,5 +89,6 @@ __all__ = [
     "verify_causal_economic_outcome",
     "verify_indeterminate_retry_outcome",
     "verify_multileg_causal_outcome",
+    "verify_settlement_attribution_outcome",
     "verify_terminal_commitment_outcome",
 ]
