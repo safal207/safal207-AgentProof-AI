@@ -1,0 +1,48 @@
+{
+  "trace_id": "astra-provider-refund-binding-unresolved-001",
+  "protocol": "provider-neutral/refund-reconciliation",
+  "scenario": "A refund movement is authoritative on the ledger but remains only contextually correlated with the original failed operation.",
+  "expected_codes": [
+    "REFUND_OPERATION_BINDING_UNRESOLVED"
+  ],
+  "expected_verdict": "DIVERGED",
+  "events": [
+    {
+      "stage": "REQUEST",
+      "key": "requested_product",
+      "value": "virtual_card",
+      "source": "merchant-request",
+      "operation_id": "card-operation-refund-001"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "outcome_status",
+      "value": "failed",
+      "source": "merchant-operation-status",
+      "operation_id": "card-operation-refund-001"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "candidate_refund_status",
+      "value": "refunded",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "payment_id": "refund-payment-001"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "refund_operation_binding",
+      "value": {
+        "status": "unresolved",
+        "confidence": "high_contextual",
+        "payment_id": "refund-payment-001",
+        "missing": [
+          "provider refund record",
+          "stable operation-to-refund identifier"
+        ]
+      },
+      "source": "public-evidence-correlation",
+      "operation_id": "card-operation-refund-001"
+    }
+  ]
+}
