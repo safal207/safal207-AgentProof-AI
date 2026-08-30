@@ -69,11 +69,14 @@ def _latest(
     *,
     stage: Stage,
     keys: set[str],
+    authoritative: bool | None = None,
 ) -> StateEvent | None:
     matches = [
         event
         for event in events
-        if event.stage == stage and event.key in keys
+        if event.stage == stage
+        and event.key in keys
+        and (authoritative is None or event.authoritative is authoritative)
     ]
     return matches[-1] if matches else None
 
@@ -108,6 +111,18 @@ def _finding(
     )
 
 
+def _latest_effective_binding(group: list[StateEvent]) -> StateEvent:
+    """Prefer the latest authoritative reconciliation event when one exists.
+
+    A later untrusted marker must not overwrite an authoritative provider
+    reconciliation record. When several authoritative records exist, trace
+    order still decides which authoritative state is current.
+    """
+
+    authoritative = [event for event in group if event.authoritative]
+    return authoritative[-1] if authoritative else group[-1]
+
+
 def verify_provider_fulfillment_outcome(
     events: Iterable[StateEvent],
 ) -> list[Finding]:
@@ -132,24 +147,26 @@ def verify_provider_fulfillment_outcome(
     materialized = list(events)
     findings: list[Finding] = []
 
-    settlements = [
-        event
-        for event in materialized
-        if event.stage == Stage.ACTUAL_SETTLEMENT_FINALITY
-        and event.key == "payment_status"
-        and event.authoritative
-        and _status(event.value) in _SETTLED_STATUSES
-        and event.operation_id is not None
-    ]
+    settlements_by_operation: dict[str, StateEvent] = {}
+    for event in materialized:
+        if (
+            event.stage == Stage.ACTUAL_SETTLEMENT_FINALITY
+            and event.key == "payment_status"
+            and event.authoritative
+            and _status(event.value) in _SETTLED_STATUSES
+            and event.operation_id is not None
+        ):
+            settlements_by_operation[event.operation_id] = event
 
-    for settlement in settlements:
-        operation_id = settlement.operation_id
+    for operation_id, settlement in settlements_by_operation.items():
         scoped = [
             event
             for event in materialized
             if event.operation_id == operation_id
         ]
 
+        # Provider truth is selected only from authoritative provider events.
+        # A later untrusted callback cannot mask an earlier authoritative state.
         fulfillment = _latest(
             scoped,
             stage=Stage.RESOURCE_OUTCOME_DELIVERY,
@@ -159,14 +176,11 @@ def verify_provider_fulfillment_outcome(
                 "merchant_outcome",
                 "provider_outcome",
             },
+            authoritative=True,
         )
         fulfillment_status = _status(fulfillment.value) if fulfillment else None
 
-        if (
-            fulfillment
-            and fulfillment.authoritative
-            and fulfillment_status in _FAILED_FULFILLMENT_STATUSES
-        ):
+        if fulfillment_status in _FAILED_FULFILLMENT_STATUSES:
             findings.append(
                 _finding(
                     code="SETTLED_FULFILLMENT_FAILED",
@@ -187,9 +201,7 @@ def verify_provider_fulfillment_outcome(
         )
         delivery_status = _status(delivery.value) if delivery else None
         if (
-            fulfillment
-            and fulfillment.authoritative
-            and fulfillment_status in _ISSUED_STATUSES
+            fulfillment_status in _ISSUED_STATUSES
             and delivery
             and delivery_status in _CLIENT_UNOBSERVED_STATUSES
         ):
@@ -206,17 +218,19 @@ def verify_provider_fulfillment_outcome(
                 )
             )
 
-    candidate_refunds = [
-        event
-        for event in materialized
-        if event.stage == Stage.ACTUAL_SETTLEMENT_FINALITY
-        and event.key in {"candidate_refund_status", "unbound_refund_status"}
-        and event.authoritative
-        and _status(event.value) in _SETTLED_STATUSES | {"refunded"}
-        and event.payment_id
-        and event.operation_id is None
-    ]
+    candidate_refunds_by_payment: dict[str, StateEvent] = {}
+    for event in materialized:
+        if (
+            event.stage == Stage.ACTUAL_SETTLEMENT_FINALITY
+            and event.key in {"candidate_refund_status", "unbound_refund_status"}
+            and event.authoritative
+            and _status(event.value) in _SETTLED_STATUSES | {"refunded"}
+            and event.payment_id
+            and event.operation_id is None
+        ):
+            candidate_refunds_by_payment[event.payment_id] = event
 
+    binding_groups: dict[tuple[str | None, str], list[StateEvent]] = {}
     for binding in materialized:
         if binding.stage != Stage.RECONCILIATION:
             continue
@@ -225,6 +239,19 @@ def verify_provider_fulfillment_outcome(
         if not isinstance(binding.value, Mapping):
             continue
 
+        payment_id = binding.value.get("payment_id")
+        if not isinstance(payment_id, str) or not payment_id:
+            continue
+        if payment_id not in candidate_refunds_by_payment:
+            continue
+
+        binding_groups.setdefault(
+            (binding.operation_id, payment_id),
+            [],
+        ).append(binding)
+
+    for (operation_id, payment_id), group in binding_groups.items():
+        binding = _latest_effective_binding(group)
         binding_status = _status(binding.value.get("status"))
         confidence = _status(binding.value.get("confidence"))
         if binding.authoritative and binding_status in _BOUND_STATUSES:
@@ -236,20 +263,7 @@ def verify_provider_fulfillment_outcome(
         ):
             continue
 
-        payment_id = binding.value.get("payment_id")
-        if not isinstance(payment_id, str) or not payment_id:
-            continue
-        refund = next(
-            (
-                event
-                for event in candidate_refunds
-                if event.payment_id == payment_id
-            ),
-            None,
-        )
-        if refund is None:
-            continue
-
+        refund = candidate_refunds_by_payment[payment_id]
         confidence_text = confidence or binding_status or "unresolved"
         findings.append(
             _finding(
@@ -257,11 +271,11 @@ def verify_provider_fulfillment_outcome(
                 severity="high",
                 explanation=(
                     f"Authoritative refund movement {payment_id!r} exists, but "
-                    f"its binding to operation {binding.operation_id!r} is only "
+                    f"its binding to operation {operation_id!r} is only "
                     f"{confidence_text!r}. Do not treat it as terminal recovery "
                     "until an authoritative linkage is supplied."
                 ),
-                operation_id=binding.operation_id,
+                operation_id=operation_id,
                 evidence=[refund, binding],
             )
         )
