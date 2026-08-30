@@ -106,6 +106,15 @@ def _latest(
     return matches[-1] if matches else None
 
 
+def _event_index(events: list[StateEvent], target: StateEvent | None) -> int | None:
+    if target is None:
+        return None
+    for index in range(len(events) - 1, -1, -1):
+        if events[index] is target:
+            return index
+    return None
+
+
 def _binding_disposition(event: StateEvent) -> tuple[str | None, str | None, str | None]:
     if not isinstance(event.value, Mapping):
         return None, None, None
@@ -176,6 +185,14 @@ def _operation_is_fully_compensated(
     if original_payment_id is None:
         return False
 
+    original_status_event = _latest(
+        events,
+        stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+        keys={"payment_status"},
+        operation_id=operation_id,
+        payment_id=original_payment_id,
+        authoritative=True,
+    )
     original_amount_event = _latest(
         events,
         stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
@@ -200,15 +217,29 @@ def _operation_is_fully_compensated(
         and original_asset_event.value.strip()
         else None
     )
-    if original_amount is None or original_amount <= 0 or original_asset is None:
+    original_indices = [
+        _event_index(events, original_status_event),
+        _event_index(events, original_amount_event),
+        _event_index(events, original_asset_event),
+    ]
+    if (
+        original_amount is None
+        or original_amount <= 0
+        or original_asset is None
+        or any(index is None for index in original_indices)
+    ):
         return False
+    original_complete_index = max(
+        index for index in original_indices if index is not None
+    )
 
     bindings = _terminal_refund_bindings(events, operation_id)
     if not bindings:
         return False
 
     refund_total = Decimal(0)
-    for refund_payment_id in bindings:
+    latest_binding_index = -1
+    for refund_payment_id, binding in bindings.items():
         refund_status = _latest(
             events,
             stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
@@ -239,12 +270,30 @@ def _operation_is_fully_compensated(
             and refund_asset_event.value.strip()
             else None
         )
+        refund_indices = [
+            _event_index(events, refund_status),
+            _event_index(events, refund_amount_event),
+            _event_index(events, refund_asset_event),
+        ]
+        binding_index = _event_index(events, binding)
         if refund_status is None or _status(refund_status.value) not in _REFUNDED_STATUSES:
             return False
         if refund_amount is None or refund_amount <= 0:
             return False
         if refund_asset != original_asset:
             return False
+        if binding_index is None or any(index is None for index in refund_indices):
+            return False
+
+        refund_complete_index = max(
+            index for index in refund_indices if index is not None
+        )
+        if refund_complete_index <= original_complete_index:
+            return False
+        if binding_index <= refund_complete_index:
+            return False
+
+        latest_binding_index = max(latest_binding_index, binding_index)
         refund_total += refund_amount
 
     if refund_total != original_amount:
@@ -257,8 +306,11 @@ def _operation_is_fully_compensated(
         operation_id=operation_id,
         authoritative=True,
     )
+    reconciliation_index = _event_index(events, reconciliation)
     return bool(
         reconciliation
+        and reconciliation_index is not None
+        and reconciliation_index > latest_binding_index
         and _status(reconciliation.value) in _TERMINAL_RECONCILIATION
     )
 
