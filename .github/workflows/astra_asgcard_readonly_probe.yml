@@ -1,0 +1,40 @@
+name: Astra ASG Card read-only ledger probe
+
+on:
+  push:
+    branches:
+      - astra/asgcard-readonly-probe
+    paths:
+      - .github/workflows/astra_asgcard_readonly_probe.yml
+      - scripts/probe_asgcard_issue17.py
+      - scripts/assert_asgcard_probe_report.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  horizon-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Query only the public incident transactions
+        run: python scripts/probe_asgcard_issue17.py
+
+      - name: Assert Soroban operation and ledger-view boundary
+        run: python scripts/assert_asgcard_probe_report.py
+
+      - name: Upload sanitized read-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asgcard-issue17-ledger-probe
+          path: artifacts/asgcard_issue17_ledger_probe.json
+          if-no-files-found: error
+          retention-days: 14
