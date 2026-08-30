@@ -91,6 +91,35 @@ def _has_identity(event: StateEvent | None) -> bool:
     )
 
 
+def _identity_relation(
+    reference: StateEvent | None,
+    target: StateEvent | None,
+) -> str:
+    """Compare typed payment identifiers without crossing namespaces.
+
+    Returns ``missing`` when the target has no payment identity, ``unresolved``
+    when the two events expose no common typed identifier, ``divergent`` when a
+    shared identifier conflicts, and ``matched`` when at least one shared typed
+    identifier agrees and none conflict.
+    """
+
+    if not _has_identity(target):
+        return "missing"
+    if not _has_identity(reference):
+        return "unresolved"
+
+    shared = False
+    for field in _IDENTITY_FIELDS:
+        expected = getattr(reference, field) if reference is not None else None
+        observed = getattr(target, field) if target is not None else None
+        if expected is None or observed is None:
+            continue
+        shared = True
+        if expected != observed:
+            return "divergent"
+    return "matched" if shared else "unresolved"
+
+
 def _delegate_applies(
     delegate: StateEvent,
     target: StateEvent | None,
@@ -103,15 +132,13 @@ def _delegate_applies(
     ``payment_id`` are deliberately not interchangeable.
     """
 
-    scoped = False
     for field in _IDENTITY_FIELDS:
         expected = getattr(delegate, field)
         if expected is None:
             continue
-        scoped = True
         if target is None or getattr(target, field) != expected:
             return False
-    return True if scoped else True
+    return True
 
 
 def _delegate_origins(
@@ -301,11 +328,20 @@ def verify_payment_credential_origin(
                 )
             )
 
-        identity_missing = [
-            event
+        identity_relations = [
+            (event, _identity_relation(bound, event))
             for event, _ in normalized_dispatches
-            if not _has_identity(event)
         ]
+        identity_missing = [
+            event for event, relation in identity_relations if relation == "missing"
+        ]
+        identity_unresolved = [
+            event for event, relation in identity_relations if relation == "unresolved"
+        ]
+        identity_divergent = [
+            event for event, relation in identity_relations if relation == "divergent"
+        ]
+
         if identity_missing:
             findings.append(
                 _finding(
@@ -323,6 +359,49 @@ def verify_payment_credential_origin(
                         challenge,
                         bound,
                         *identity_missing,
+                    ],
+                )
+            )
+
+        if identity_unresolved:
+            findings.append(
+                _finding(
+                    code="CREDENTIAL_IDENTITY_BINDING_UNRESOLVED",
+                    from_stage=Stage.MANDATE_AUTHORIZATION,
+                    to_stage=Stage.PAYMENT_ATTEMPT,
+                    severity="medium",
+                    explanation=(
+                        "The bound credential and one or more dispatch events "
+                        "expose no common typed authorization_id or payment_id, "
+                        "so they cannot be proven to describe the same credential."
+                    ),
+                    operation_id=operation_id,
+                    evidence=[
+                        declaration,
+                        challenge,
+                        bound,
+                        *identity_unresolved,
+                    ],
+                )
+            )
+
+        if identity_divergent:
+            findings.append(
+                _finding(
+                    code="CREDENTIAL_IDENTITY_DIVERGENCE",
+                    from_stage=Stage.MANDATE_AUTHORIZATION,
+                    to_stage=Stage.PAYMENT_ATTEMPT,
+                    severity="high",
+                    explanation=(
+                        "A dispatch event conflicts with the typed payment identity "
+                        "bound to the accepted credential."
+                    ),
+                    operation_id=operation_id,
+                    evidence=[
+                        declaration,
+                        challenge,
+                        bound,
+                        *identity_divergent,
                     ],
                 )
             )
