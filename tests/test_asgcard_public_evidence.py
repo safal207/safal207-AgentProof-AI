@@ -6,14 +6,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT = ROOT / "docs" / "evidence" / "asgcard-issue17-stellar-mainnet-snapshot.json"
-FIXTURE = ROOT / "fixtures" / "astra" / "stellar_asgcard_settled_without_delivery.json"
+FIXTURE = (
+    ROOT
+    / "fixtures"
+    / "astra"
+    / "stellar_asgcard_settlement_binding_unresolved.json"
+)
 
 
 def _time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def test_asgcard_fixture_is_bound_to_the_public_stellar_snapshot():
+def test_asgcard_candidate_settlement_matches_public_stellar_snapshot():
     snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
 
@@ -34,18 +39,27 @@ def test_asgcard_fixture_is_bound_to_the_public_stellar_snapshot():
         for event in fixture["events"]
         if event["stage"] == "ACTUAL SETTLEMENT/FINALITY"
     ]
-    status = next(event for event in finality_events if event["key"] == "payment_status")
-    amount = next(event for event in finality_events if event["key"] == "settled_amount_minor")
+    status = next(
+        event for event in finality_events if event["key"] == "candidate_payment_status"
+    )
+    amount = next(
+        event
+        for event in finality_events
+        if event["key"] == "candidate_settled_amount_minor"
+    )
 
     assert status["authoritative"] is True
     assert status["value"] == "settled"
     assert status["payment_id"] == settlement["transaction_hash"]
+    assert "operation_id" not in status
     assert amount["payment_id"] == settlement["transaction_hash"]
     assert amount["value"] == 3588
+    assert "operation_id" not in amount
 
 
 def test_operation_binding_is_strongly_correlated_but_not_overstated():
     snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
     binding = snapshot["operation_binding"]
 
     assert binding["confidence"] == "high_contextual"
@@ -54,6 +68,19 @@ def test_operation_binding_is_strongly_correlated_but_not_overstated():
     assert any(
         "cryptographically unique" in claim
         for claim in snapshot["claim_boundary"]["not_supported"]
+    )
+
+    binding_event = next(
+        event
+        for event in fixture["events"]
+        if event["key"] == "settlement_operation_binding"
+    )
+    assert binding_event["operation_id"] == "asgcard-issue17-card-create"
+    assert binding_event["value"]["status"] == "unresolved"
+    assert binding_event["value"]["confidence"] == "high_contextual"
+    assert (
+        binding_event["value"]["payment_id"]
+        == snapshot["authoritative_settlement_evidence"]["transaction_hash"]
     )
 
 
