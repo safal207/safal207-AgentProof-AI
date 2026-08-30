@@ -1,0 +1,43 @@
+{
+  "trace_id": "astra-agentcore-session-local-pairing-001",
+  "protocol": "aws-agentcore-payments/public-sdk",
+  "scenario": "The application labels one payment session as the research agent's Coinbase budget, but the trace contains no authoritative session-to-agent, instrument, merchant, or operation binding.",
+  "expected_codes": [
+    "PAYMENT_SESSION_BINDING_MISSING"
+  ],
+  "expected_verdict": "UNRESOLVED",
+  "events": [
+    {
+      "stage": "POLICY DECISION",
+      "key": "requires_payment_session_principal_binding",
+      "value": {
+        "required": true,
+        "dimensions": [
+          "user_id",
+          "agent_id",
+          "payment_instrument_id",
+          "merchant_origin",
+          "operation_id"
+        ]
+      },
+      "source": "astra-agentcore-session-contract",
+      "session_id": "session-a",
+      "operation_id": "research-call-001"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "payment_session_use",
+      "value": {
+        "user_id": "tutorial-user",
+        "agent_id": "research-agent",
+        "payment_instrument_id": "coinbase-instrument-a",
+        "merchant_origin": "https://weather.example",
+        "operation_id": "research-call-001"
+      },
+      "source": "local-plugin-configuration",
+      "session_id": "session-a",
+      "operation_id": "research-call-001",
+      "attempt_id": "research-attempt-001"
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+{
+  "trace_id": "astra-agentcore-session-bound-green-001",
+  "protocol": "aws-agentcore-payments/multi-agent",
+  "scenario": "A research-agent payment session is authoritatively bound to one user, instrument, merchant, and operation; the observed use matches and one same-identity settlement, receipt, delivery, and terminal reconciliation agree.",
+  "expected_codes": [],
+  "expected_verdict": "VERIFIED",
+  "events": [
+    {
+      "stage": "REQUEST",
+      "key": "business_obligation",
+      "value": "one_paid_weather_lookup",
+      "source": "orchestrator",
+      "session_id": "session-a",
+      "operation_id": "research-call-005"
+    },
+    {
+      "stage": "POLICY DECISION",
+      "key": "requires_payment_session_principal_binding",
+      "value": {
+        "required": true,
+        "dimensions": [
+          "user_id",
+          "agent_id",
+          "payment_instrument_id",
+          "merchant_origin",
+          "operation_id"
+        ]
+      },
+      "source": "astra-agentcore-session-contract",
+      "session_id": "session-a"
+    },
+    {
+      "stage": "POLICY DECISION",
+      "key": "payment_session_binding",
+      "value": {
+        "user_id": "tutorial-user",
+        "agent_id": "research-agent",
+        "payment_instrument_id": "coinbase-instrument-a",
+        "merchant_origin": "https://weather.example",
+        "operation_id": "research-call-005"
+      },
+      "source": "authoritative-session-registry",
+      "authoritative": true,
+      "session_id": "session-a",
+      "operation_id": "research-call-005"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "payment_session_use",
+      "value": {
+        "user_id": "tutorial-user",
+        "agent_id": "research-agent",
+        "payment_instrument_id": "coinbase-instrument-a",
+        "merchant_origin": "HTTPS://Weather.Example:443/paid?city=tallinn",
+        "operation_id": "research-call-005"
+      },
+      "source": "payment-plugin-attempt-context",
+      "session_id": "session-a",
+      "operation_id": "research-call-005",
+      "attempt_id": "research-attempt-005",
+      "payment_id": "process-payment-005"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "agentcore-process-payment",
+      "session_id": "session-a",
+      "operation_id": "research-call-005",
+      "attempt_id": "research-attempt-005",
+      "payment_id": "process-payment-005"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-settlement-check",
+      "authoritative": true,
+      "session_id": "session-a",
+      "operation_id": "research-call-005",
+      "attempt_id": "research-attempt-005",
+      "payment_id": "process-payment-005"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "merchant-payment-receipt",
+      "session_id": "session-a",
+      "operation_id": "research-call-005",
+      "payment_id": "process-payment-005"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "paid-weather-client",
+      "session_id": "session-a",
+      "operation_id": "research-call-005"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "complete",
+      "source": "session-operation-ledger",
+      "authoritative": true,
+      "session_id": "session-a",
+      "operation_id": "research-call-005"
+    }
+  ]
+}

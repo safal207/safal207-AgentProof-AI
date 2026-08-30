@@ -9,6 +9,7 @@ from .astra_fulfillment import verify_provider_fulfillment_outcome
 from .astra_multileg import verify_multileg_causal_outcome
 from .astra_origin import verify_payment_credential_origin
 from .astra_retry import verify_indeterminate_retry_outcome
+from .astra_session import verify_payment_session_principal_binding
 from .astra_verifier import (
     STATE_GRAPH,
     Finding,
@@ -80,6 +81,7 @@ def verify_causal_economic_outcome(
         *verify_terminal_commitment_outcome(materialized),
         *verify_indeterminate_retry_outcome(materialized),
         *verify_payment_credential_origin(materialized),
+        *verify_payment_session_principal_binding(materialized),
         *verify_settlement_attribution_outcome(materialized),
         *verify_provider_fulfillment_outcome(materialized),
     ]
@@ -94,6 +96,7 @@ __all__ = [
     "verify_indeterminate_retry_outcome",
     "verify_multileg_causal_outcome",
     "verify_payment_credential_origin",
+    "verify_payment_session_principal_binding",
     "verify_provider_fulfillment_outcome",
     "verify_settlement_attribution_outcome",
     "verify_terminal_commitment_outcome",
