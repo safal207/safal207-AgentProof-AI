@@ -10,11 +10,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping
 
+from .astra_compensation import is_fully_compensated
 from .astra_spider import Finding, Stage, StateEvent, verify_causal_economic_outcome
 
 
 HASH_PROFILE = "astra-trace-json-v1"
-VALID_VERDICTS = frozenset({"VERIFIED", "UNRESOLVED", "DIVERGED"})
+VALID_VERDICTS = frozenset({"VERIFIED", "COMPENSATED", "UNRESOLVED", "DIVERGED"})
 
 
 @dataclass(frozen=True)
@@ -159,11 +160,13 @@ def build_trace_report(trace: Trace) -> TraceReport:
     findings = tuple(verify_causal_economic_outcome(trace.events))
     severities = {finding.severity for finding in findings}
     verdict = (
-        "DIVERGED"
+        "VERIFIED"
+        if not findings
+        else "COMPENSATED"
+        if is_fully_compensated(trace.events, findings)
+        else "DIVERGED"
         if severities & {"critical", "high"}
         else "UNRESOLVED"
-        if findings
-        else "VERIFIED"
     )
     return TraceReport(
         trace_id=trace.trace_id,
