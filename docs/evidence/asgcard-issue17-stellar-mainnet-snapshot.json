@@ -31,6 +31,13 @@
     "credited_amount": "35.8800000",
     "destination_account": "GAHYHA55RTD2J4LAVJILTNHWMF2H2YVK5QXLQT3CHCJSVET3VRWPOCW6"
   },
+  "ledger_view_divergence": {
+    "account_payments_candidate_outgoing_usdc_count": 0,
+    "account_payments_matching_record_type": "invoke_host_function",
+    "account_effects_matching_debit_count": 1,
+    "account_effects_matching_credit_count": 1,
+    "adapter_rule": "Do not infer that no payment settled merely because an account payment stream lacks a classic outgoing payment record. For Soroban-hosted transfers, resolve transaction effects or contract events before assigning finality."
+  },
   "post_incident_observation": {
     "transaction_hash": "df06e0ed59caf8c4fa388c71c054c75dbd8aa65750bbf9cddb5f4a149d5707e8",
     "created_at": "2026-08-30T02:01:49Z",
@@ -47,6 +54,7 @@
     "supported": [
       "A successful 35.88 USDC value movement occurred 39 seconds after the reported operation start.",
       "The client observed HTTP 502 and no card details in the supplied public trace.",
+      "The classic account payment view did not expose the debit as an ordinary outgoing payment, while transaction effects did expose the debit and matching credit.",
       "The later 9.70 USDC credit is not causally bound to the original operation by the public evidence."
     ],
     "not_supported": [
