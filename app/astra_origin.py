@@ -490,6 +490,60 @@ def verify_payment_credential_origin(
             and event.key == "credential_consumer_origin"
             and event.authoritative
         ]
+        consumer_relations = [
+            (event, _identity_relation(bound, event)) for event in consumers
+        ]
+        consumer_unresolved = [
+            event
+            for event, relation in consumer_relations
+            if relation in {"missing", "unresolved"}
+        ]
+        consumer_divergent = [
+            event
+            for event, relation in consumer_relations
+            if relation == "divergent"
+        ]
+
+        if consumer_unresolved:
+            findings.append(
+                _finding(
+                    code="SETTLEMENT_CREDENTIAL_IDENTITY_UNRESOLVED",
+                    from_stage=Stage.MANDATE_AUTHORIZATION,
+                    to_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                    severity="medium",
+                    explanation=(
+                        "Authoritative consumer-origin evidence cannot be bound to "
+                        "the accepted credential through a common typed payment ID."
+                    ),
+                    operation_id=operation_id,
+                    evidence=[
+                        declaration,
+                        bound,
+                        *consumer_unresolved,
+                    ],
+                )
+            )
+
+        if consumer_divergent:
+            findings.append(
+                _finding(
+                    code="SETTLEMENT_CREDENTIAL_IDENTITY_DIVERGENCE",
+                    from_stage=Stage.MANDATE_AUTHORIZATION,
+                    to_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                    severity="critical",
+                    explanation=(
+                        "Authoritative settlement-consumer evidence conflicts with "
+                        "the typed identity of the accepted credential."
+                    ),
+                    operation_id=operation_id,
+                    evidence=[
+                        declaration,
+                        bound,
+                        *consumer_divergent,
+                    ],
+                )
+            )
+
         unauthorized_consumers: list[StateEvent] = []
         for event in consumers:
             origin = normalize_origin(event.value)
