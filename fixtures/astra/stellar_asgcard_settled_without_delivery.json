@@ -28,7 +28,7 @@
     },
     {
       "stage": "CLAIMED RESULT",
-      "key": "payment_status",
+      "key": "outcome_status",
       "value": "failed",
       "source": "payment-gated-operation-http-502",
       "operation_id": "asgcard-issue17-card-create"
