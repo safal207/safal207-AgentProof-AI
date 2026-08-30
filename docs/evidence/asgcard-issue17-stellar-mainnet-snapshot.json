@@ -1,0 +1,58 @@
+{
+  "evidence_profile": "astra-public-ledger-snapshot-v1",
+  "captured_at": "2026-08-30T02:34:52Z",
+  "network": "Stellar Mainnet",
+  "public_sources": {
+    "incident": "ASGCompute/asgcard-public#17",
+    "product_contract": "ASGCompute/asgcard-public README",
+    "ledger_api": "https://horizon.stellar.org"
+  },
+  "incident_claims": {
+    "started_at": "2026-08-30T01:15:00Z",
+    "requested_card_load_usd": "25.00",
+    "client_result": "HTTP 502",
+    "card_details_returned": false,
+    "safe_retry_performed": false
+  },
+  "pricing_context": {
+    "published_creation_fee_usd": "10.00",
+    "published_top_up_rate": "0.035",
+    "formula_for_25_usd_load": "10.00 + 25.00 * 1.035 = 35.875",
+    "note": "The public README explains the pricing formula. The exact 402 challenge body was not available in the incident report, so this calculation is contextual rather than authorization evidence."
+  },
+  "authoritative_settlement_evidence": {
+    "transaction_hash": "2b02ade834ffaa839cdfeca4409af049121a014abe0cf5bab95801012d2fe134",
+    "successful": true,
+    "created_at": "2026-08-30T01:15:39Z",
+    "operation_type": "invoke_host_function",
+    "asset_code": "USDC",
+    "asset_issuer": "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+    "debited_amount": "35.8800000",
+    "credited_amount": "35.8800000",
+    "destination_account": "GAHYHA55RTD2J4LAVJILTNHWMF2H2YVK5QXLQT3CHCJSVET3VRWPOCW6"
+  },
+  "post_incident_observation": {
+    "transaction_hash": "df06e0ed59caf8c4fa388c71c054c75dbd8aa65750bbf9cddb5f4a149d5707e8",
+    "created_at": "2026-08-30T02:01:49Z",
+    "asset_code": "USDC",
+    "credited_amount": "9.7000000",
+    "operation_binding": null,
+    "classification": "unattributed_credit",
+    "note": "Public ledger evidence alone does not establish that this credit is a refund, compensation, or reconciliation for the card-create operation."
+  },
+  "account_observation_at_capture": {
+    "usdc_balance": "9.7100000"
+  },
+  "claim_boundary": {
+    "supported": [
+      "A successful 35.88 USDC value movement occurred 39 seconds after the reported operation start.",
+      "The client observed HTTP 502 and no card details in the supplied public trace.",
+      "The later 9.70 USDC credit is not causally bound to the original operation by the public evidence."
+    ],
+    "not_supported": [
+      "The downstream issuer definitely failed to create a card.",
+      "The later 9.70 USDC credit is definitely a refund.",
+      "No internal ASG reconciliation or card record exists outside the observed sources."
+    ]
+  }
+}
