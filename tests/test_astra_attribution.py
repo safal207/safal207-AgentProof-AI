@@ -5,7 +5,11 @@ PAYMENT_ID = "tx-candidate-1"
 OPERATION_ID = "operation-1"
 
 
-def _events(binding_status: str = "unresolved") -> list[StateEvent]:
+def _events(
+    binding_status: str = "unresolved",
+    *,
+    binding_authoritative: bool = False,
+) -> list[StateEvent]:
     return [
         StateEvent(
             stage=Stage.CLAIMED_RESULT,
@@ -31,6 +35,7 @@ def _events(binding_status: str = "unresolved") -> list[StateEvent]:
                 "payment_id": PAYMENT_ID,
             },
             source="correlation-layer",
+            authoritative=binding_authoritative,
             operation_id=OPERATION_ID,
         ),
     ]
@@ -80,8 +85,18 @@ def test_authoritatively_bound_operation_uses_normal_payment_finality_path():
     assert "SETTLEMENT_OPERATION_BINDING_UNRESOLVED" not in codes
 
 
-def test_bound_binding_marker_does_not_emit_unresolved_finding():
+def test_non_authoritative_bound_marker_does_not_close_gap():
     findings = verify_causal_economic_outcome(_events(binding_status="bound"))
+
+    assert "SETTLEMENT_OPERATION_BINDING_UNRESOLVED" in {
+        finding.code for finding in findings
+    }
+
+
+def test_authoritative_bound_marker_closes_gap():
+    findings = verify_causal_economic_outcome(
+        _events(binding_status="bound", binding_authoritative=True)
+    )
 
     assert "SETTLEMENT_OPERATION_BINDING_UNRESOLVED" not in {
         finding.code for finding in findings
