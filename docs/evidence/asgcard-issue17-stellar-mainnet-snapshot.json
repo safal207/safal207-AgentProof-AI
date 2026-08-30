@@ -20,6 +20,20 @@
     "formula_for_25_usd_load": "10.00 + 25.00 * 1.035 = 35.875",
     "note": "The public README explains the pricing formula. The exact 402 challenge body was not available in the incident report, so this calculation is contextual rather than authorization evidence."
   },
+  "operation_binding": {
+    "confidence": "high_contextual",
+    "supporting_signals": [
+      "the transaction debits the public wallet named in the incident",
+      "the transaction settled 39 seconds after the reported operation start",
+      "the 35.88 USDC debit matches the reported balance drop and the rounded public pricing context"
+    ],
+    "missing_evidence": [
+      "exact 402 challenge or signed payment envelope",
+      "provider request ID or stable operation ID",
+      "merchant receipt binding the transaction to card issuance"
+    ],
+    "note": "The settlement is strongly correlated with the reported operation, but the public evidence does not provide a cryptographic or provider-issued one-to-one binding."
+  },
   "authoritative_settlement_evidence": {
     "transaction_hash": "2b02ade834ffaa839cdfeca4409af049121a014abe0cf5bab95801012d2fe134",
     "successful": true,
@@ -33,7 +47,9 @@
   },
   "ledger_view_divergence": {
     "account_payments_candidate_outgoing_usdc_count": 0,
-    "account_payments_matching_record_type": "invoke_host_function",
+    "account_payments_matching_record_types": [
+      "invoke_host_function"
+    ],
     "account_effects_matching_debit_count": 1,
     "account_effects_matching_credit_count": 1,
     "adapter_rule": "Do not infer that no payment settled merely because an account payment stream lacks a classic outgoing payment record. For Soroban-hosted transfers, resolve transaction effects or contract events before assigning finality."
@@ -47,17 +63,16 @@
     "classification": "unattributed_credit",
     "note": "Public ledger evidence alone does not establish that this credit is a refund, compensation, or reconciliation for the card-create operation."
   },
-  "account_observation_at_capture": {
-    "usdc_balance": "9.7100000"
-  },
   "claim_boundary": {
     "supported": [
       "A successful 35.88 USDC value movement occurred 39 seconds after the reported operation start.",
+      "The value movement is strongly correlated with the reported operation by wallet, time, amount, and public pricing context.",
       "The client observed HTTP 502 and no card details in the supplied public trace.",
       "The classic account payment view did not expose the debit as an ordinary outgoing payment, while transaction effects did expose the debit and matching credit.",
       "The later 9.70 USDC credit is not causally bound to the original operation by the public evidence."
     ],
     "not_supported": [
+      "A cryptographically unique one-to-one operation binding is present in the public evidence.",
       "The downstream issuer definitely failed to create a card.",
       "The later 9.70 USDC credit is definitely a refund.",
       "No internal ASG reconciliation or card record exists outside the observed sources."
