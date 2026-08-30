@@ -157,9 +157,19 @@ def test_delegate_for_another_authorization_does_not_leak_authority():
     found = codes(
         [
             origin_contract(operation_id),
-            *challenge_and_binding(
-                operation_id,
-                origin="https://delegate.example",
+            event(
+                Stage.QUOTE_CHALLENGE,
+                "challenge_origin",
+                "https://merchant.example",
+                "challenge",
+                operation_id=operation_id,
+            ),
+            event(
+                Stage.MANDATE_AUTHORIZATION,
+                "credential_bound_origin",
+                "https://delegate.example",
+                "authorization",
+                operation_id=operation_id,
                 authorization_id="auth-2",
             ),
             delegate(
