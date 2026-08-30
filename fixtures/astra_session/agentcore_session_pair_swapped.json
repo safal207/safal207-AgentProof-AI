@@ -1,0 +1,58 @@
+{
+  "trace_id": "astra-agentcore-session-crossover-red-001",
+  "protocol": "aws-agentcore-payments/multi-agent",
+  "scenario": "Session A is authoritatively bound to the research agent and Coinbase instrument, but the observed payment attempt uses the discovery agent and Privy instrument for the same user, merchant, and business operation.",
+  "expected_codes": [
+    "SESSION_AGENT_CROSSOVER",
+    "SESSION_INSTRUMENT_CROSSOVER"
+  ],
+  "expected_verdict": "DIVERGED",
+  "events": [
+    {
+      "stage": "POLICY DECISION",
+      "key": "requires_payment_session_principal_binding",
+      "value": {
+        "required": true,
+        "dimensions": [
+          "user_id",
+          "agent_id",
+          "payment_instrument_id",
+          "merchant_origin",
+          "operation_id"
+        ]
+      },
+      "source": "astra-agentcore-session-contract",
+      "session_id": "session-a"
+    },
+    {
+      "stage": "POLICY DECISION",
+      "key": "payment_session_binding",
+      "value": {
+        "user_id": "tutorial-user",
+        "agent_id": "research-agent",
+        "payment_instrument_id": "coinbase-instrument-a",
+        "merchant_origin": "https://weather.example",
+        "operation_id": "research-call-002"
+      },
+      "source": "authoritative-session-registry",
+      "authoritative": true,
+      "session_id": "session-a",
+      "operation_id": "research-call-002"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "payment_session_use",
+      "value": {
+        "user_id": "tutorial-user",
+        "agent_id": "discovery-agent",
+        "payment_instrument_id": "privy-instrument-b",
+        "merchant_origin": "https://weather.example/paid",
+        "operation_id": "research-call-002"
+      },
+      "source": "payment-plugin-attempt-context",
+      "session_id": "session-a",
+      "operation_id": "research-call-002",
+      "attempt_id": "research-attempt-002"
+    }
+  ]
+}
