@@ -26,6 +26,7 @@ def test_asgcard_candidate_settlement_matches_public_stellar_snapshot():
     incident = snapshot["incident_claims"]
 
     assert settlement["successful"] is True
+    assert settlement["operation_type"] == "invoke_host_function"
     assert settlement["asset_code"] == "USDC"
     assert Decimal(settlement["debited_amount"]) == Decimal("35.8800000")
     assert Decimal(settlement["credited_amount"]) == Decimal("35.8800000")
