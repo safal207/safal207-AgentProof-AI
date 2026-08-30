@@ -43,6 +43,8 @@ At `2026-08-30T01:15:39Z`, 39 seconds after the reported start:
 
 That establishes successful economic movement. It does not, by itself, establish card issuance or delivery.
 
+The transaction is **strongly contextually correlated** with the reported operation: it debits the public incident wallet, lands 39 seconds after the reported start, and its amount matches the reported balance change and rounded public pricing formula. The public evidence does not contain the exact 402 challenge, signed payment envelope, provider operation ID, or merchant receipt, so Astra does not claim a cryptographically unique one-to-one binding.
+
 At `2026-08-30T02:01:49Z`, the wallet received a separate `9.7000000 USDC` credit. The public evidence does not bind that credit to the failed card-create operation. Astra therefore records it as an **unattributed post-incident credit**, not as a refund or completed reconciliation.
 
 ## Adapter lesson: one ledger view was insufficient
@@ -67,12 +69,14 @@ This is an observability boundary, not a claim that Horizon is defective. Differ
 ```text
 REQUEST: create $25 virtual card
   -> PAYMENT ATTEMPT: payment submitted
-  -> CLAIMED RESULT: HTTP 502 / failed
+  -> CLAIMED RESULT: card-create operation failed with HTTP 502
   -> ACTUAL SETTLEMENT: 35.88 USDC settled on Stellar Mainnet
   -> RECEIPT: absent from the public trace
   -> RESOURCE/OUTCOME DELIVERY: no card details observed
   -> RECONCILIATION: no operation-bound terminal record observed
 ```
+
+The fixture records the HTTP result as generic `outcome_status=failed`, not as an assertion that the payment rail itself returned `payment_status=failed`. Astra normalizes the generic terminal claim only for comparison with independent settlement evidence.
 
 ## Astra verdict
 
