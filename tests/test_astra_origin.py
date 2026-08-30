@@ -214,7 +214,10 @@ def test_equal_strings_in_different_identity_fields_do_not_authorize_delegate():
         ]
     )
 
-    assert found == {"PAYMENT_CREDENTIAL_ORIGIN_DIVERGENCE"}
+    assert found == {
+        "CREDENTIAL_IDENTITY_BINDING_UNRESOLVED",
+        "PAYMENT_CREDENTIAL_ORIGIN_DIVERGENCE",
+    }
 
 
 def test_equal_strings_in_different_identity_fields_do_not_imply_reuse():
@@ -230,7 +233,7 @@ def test_equal_strings_in_different_identity_fields_do_not_imply_reuse():
                 "merchant-log",
                 operation_id=operation_id,
                 attempt_id="attempt-auth",
-                authorization_id="shared-id",
+                authorization_id="auth-1",
             ),
             event(
                 Stage.PAYMENT_ATTEMPT,
@@ -239,12 +242,57 @@ def test_equal_strings_in_different_identity_fields_do_not_imply_reuse():
                 "redirect-log",
                 operation_id=operation_id,
                 attempt_id="attempt-payment",
-                payment_id="shared-id",
+                payment_id="auth-1",
             ),
         ]
     )
 
-    assert found == {"PAYMENT_CREDENTIAL_ORIGIN_DIVERGENCE"}
+    assert found == {
+        "CREDENTIAL_IDENTITY_BINDING_UNRESOLVED",
+        "PAYMENT_CREDENTIAL_ORIGIN_DIVERGENCE",
+    }
+
+
+def test_dispatch_identity_mismatch_is_detected_at_correct_origin():
+    operation_id = "op-identity-mismatch"
+    found = codes(
+        [
+            origin_contract(operation_id),
+            *challenge_and_binding(operation_id),
+            event(
+                Stage.PAYMENT_ATTEMPT,
+                "credential_dispatch_origin",
+                "https://merchant.example",
+                "request-log",
+                operation_id=operation_id,
+                attempt_id="attempt-mismatch",
+                authorization_id="auth-2",
+            ),
+        ]
+    )
+
+    assert found == {"CREDENTIAL_IDENTITY_DIVERGENCE"}
+
+
+def test_dispatch_identity_without_common_namespace_is_unresolved():
+    operation_id = "op-identity-unresolved"
+    found = codes(
+        [
+            origin_contract(operation_id),
+            *challenge_and_binding(operation_id),
+            event(
+                Stage.PAYMENT_ATTEMPT,
+                "credential_dispatch_origin",
+                "https://merchant.example",
+                "request-log",
+                operation_id=operation_id,
+                attempt_id="attempt-unresolved",
+                payment_id="auth-1",
+            ),
+        ]
+    )
+
+    assert found == {"CREDENTIAL_IDENTITY_BINDING_UNRESOLVED"}
 
 
 def test_non_authoritative_delegate_is_not_permission():
