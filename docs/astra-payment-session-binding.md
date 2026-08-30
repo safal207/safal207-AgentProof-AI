@@ -99,10 +99,14 @@ A local variable name, plugin object, prompt, or orchestration label is not an
 authoritative session binding by itself.
 
 A declaration may list only the dimensions the integration actually promises.
-A dimension omitted from the contract is not inferred or checked. Two required
-contracts at the same scope may not silently declare different dimension sets;
-that is a contract conflict rather than a later declaration overriding an
-earlier, stronger boundary.
+A dimension omitted from every applicable contract is not inferred or checked.
+A global contract is the minimum requirement for every session: a
+session-specific contract is combined with it by set union and may only add
+requirements, never remove them. Two required contracts at the same scope may
+not silently declare different dimension sets; that is a contract conflict
+rather than a later declaration overriding an earlier boundary. If the global
+scope itself conflicts, evaluation stops after the high-severity contract
+finding because no stable minimum policy exists.
 
 ## Merchant origin comparison
 
