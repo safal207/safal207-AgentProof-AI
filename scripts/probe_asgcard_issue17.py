@@ -16,6 +16,11 @@ SETTLEMENT_TX = "2b02ade834ffaa839cdfeca4409af049121a014abe0cf5bab95801012d2fe13
 POST_INCIDENT_CREDIT_TX = "df06e0ed59caf8c4fa388c71c054c75dbd8aa65750bbf9cddb5f4a149d5707e8"
 USDC_ISSUER = "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"
 SETTLEMENT_DESTINATION = "GAHYHA55RTD2J4LAVJILTNHWMF2H2YVK5QXLQT3CHCJSVET3VRWPOCW6"
+_CLASSIC_PAYMENT_TYPES = {
+    "payment",
+    "path_payment_strict_receive",
+    "path_payment_strict_send",
+}
 
 
 def _get_json(path: str) -> dict[str, Any]:
@@ -23,7 +28,7 @@ def _get_json(path: str) -> dict[str, Any]:
         f"{HORIZON}{path}",
         headers={
             "Accept": "application/hal+json, application/json",
-            "User-Agent": "Astra-Spider-read-only-probe/1.1",
+            "User-Agent": "Astra-Spider-read-only-probe/1.2",
         },
         method="GET",
     )
@@ -124,23 +129,39 @@ def _usdc_effects(bundle: Mapping[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _current_usdc_balance() -> str | None:
-    account = _get_json(f"/accounts/{ACCOUNT}")
-    balances = account.get("balances")
-    if not isinstance(balances, list):
-        return None
-    for balance in balances:
-        if not isinstance(balance, Mapping):
-            continue
-        if balance.get("asset_code") == "USDC" and balance.get("asset_issuer") == USDC_ISSUER:
-            value = balance.get("balance")
-            return str(value) if value is not None else None
-    return None
+def _account_payment_view() -> dict[str, Any]:
+    payload = _get_json(f"/accounts/{ACCOUNT}/payments?order=desc&limit=200")
+    matching = [
+        record
+        for record in _records(payload)
+        if record.get("transaction_hash") == SETTLEMENT_TX
+    ]
+    classic_outgoing = [
+        record
+        for record in matching
+        if record.get("type") in _CLASSIC_PAYMENT_TYPES
+        and (record.get("from") == ACCOUNT or record.get("source_account") == ACCOUNT)
+        and record.get("asset_code") == "USDC"
+        and record.get("asset_issuer") == USDC_ISSUER
+    ]
+    record_types = sorted(
+        {
+            str(record["type"])
+            for record in matching
+            if record.get("type") is not None
+        }
+    )
+    return {
+        "matching_transaction_record_count": len(matching),
+        "matching_record_types": record_types,
+        "candidate_classic_outgoing_usdc_count": len(classic_outgoing),
+    }
 
 
 def build_report() -> dict[str, Any]:
     settlement = _transaction_bundle(SETTLEMENT_TX)
     later_credit = _transaction_bundle(POST_INCIDENT_CREDIT_TX)
+    payment_view = _account_payment_view()
 
     settlement_effects = _usdc_effects(settlement)
     debits = [
@@ -176,7 +197,7 @@ def build_report() -> dict[str, Any]:
 
     return {
         "probe": "asgcard-issue-17-stellar-mainnet-read-only",
-        "probe_version": 2,
+        "probe_version": 3,
         "read_only": True,
         "network": "Stellar Mainnet",
         "horizon": HORIZON,
@@ -191,17 +212,27 @@ def build_report() -> dict[str, Any]:
             "debited_amount": str(debit_amount),
             "credited_amount": str(credit_amount),
         },
+        "ledger_view_divergence": {
+            "account_payments_candidate_outgoing_usdc_count": payment_view[
+                "candidate_classic_outgoing_usdc_count"
+            ],
+            "account_payments_matching_record_types": payment_view[
+                "matching_record_types"
+            ],
+            "account_effects_matching_debit_count": len(debits),
+            "account_effects_matching_credit_count": len(credits),
+        },
         "post_incident_credit": later_credit,
         "post_incident_assertions": {
             "wallet_credit_count": len(later_wallet_credits),
             "operation_binding": None,
             "classification": "unattributed_credit",
         },
-        "current_usdc_balance": _current_usdc_balance(),
         "claim_boundary": {
             "supports": [
                 "The 35.88 USDC settlement transaction succeeded.",
                 "The transaction effects contain a matching wallet debit and destination credit.",
+                "The account payment view does not expose this Soroban settlement as a classic outgoing USDC payment.",
             ],
             "does_not_support": [
                 "The downstream card issuer definitely failed.",
