@@ -272,7 +272,12 @@ def verify_provider_fulfillment_outcome(
     for (operation_id, payment_id), group in binding_groups.items():
         binding = _latest_effective_binding(group)
         binding_status, confidence = _binding_disposition(binding)
-        if binding.authoritative and binding_status in _BOUND_STATUSES:
+        binding_is_terminal = bool(
+            binding.authoritative
+            and binding_status in _BOUND_STATUSES
+            and confidence not in _UNRESOLVED_STATUSES
+        )
+        if binding_is_terminal:
             continue
 
         refund = candidate_refunds_by_payment[payment_id]
