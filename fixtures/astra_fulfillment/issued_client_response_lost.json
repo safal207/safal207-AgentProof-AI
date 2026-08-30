@@ -1,0 +1,51 @@
+{
+  "trace_id": "astra-provider-issued-client-unobserved-001",
+  "protocol": "provider-neutral/card-fulfillment",
+  "scenario": "Payment settles and the provider authoritatively issues the resource, but the client response is explicitly recorded as lost.",
+  "expected_codes": [
+    "ISSUED_BUT_CLIENT_UNOBSERVED",
+    "SETTLED_BUT_NOT_DELIVERED"
+  ],
+  "expected_verdict": "DIVERGED",
+  "events": [
+    {
+      "stage": "REQUEST",
+      "key": "requested_product",
+      "value": "virtual_card",
+      "source": "merchant-request",
+      "operation_id": "card-operation-unobserved-001"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "submitted",
+      "source": "payment-client",
+      "operation_id": "card-operation-unobserved-001",
+      "attempt_id": "attempt-unobserved-001"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "operation_id": "card-operation-unobserved-001",
+      "payment_id": "payment-unobserved-001"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "issuer_status",
+      "value": "issued",
+      "source": "issuer-terminal-record",
+      "authoritative": true,
+      "operation_id": "card-operation-unobserved-001"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "response_lost",
+      "source": "client-transport-record",
+      "operation_id": "card-operation-unobserved-001"
+    }
+  ]
+}

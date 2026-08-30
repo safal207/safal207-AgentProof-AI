@@ -21,7 +21,12 @@ def _fixture_paths(values: list[str]) -> list[Path]:
             else:
                 paths.append(path)
         return paths
-    return sorted((ROOT / "fixtures" / "astra").glob("*.json"))
+
+    # Every top-level fixture family whose directory starts with ``astra`` is
+    # part of the default conformance suite. This keeps specialized lifecycle
+    # packs (for example ``astra_fulfillment``) inside the same CI command
+    # without recursively sweeping unrelated repository fixtures.
+    return sorted((ROOT / "fixtures").glob("astra*/*.json"))
 
 
 def main() -> int:
