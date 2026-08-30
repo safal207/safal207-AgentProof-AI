@@ -1,7 +1,7 @@
 {
   "trace_id": "astra-stellar-asgcard-issue17-001",
   "protocol": "stellar-x402/asgcard",
-  "scenario": "A card-create request returned HTTP 502 without card details, while independent Stellar Mainnet evidence shows the corresponding 35.88 USDC debit settled successfully. No card-delivery evidence is present in the observed trace.",
+  "scenario": "A payment-gated card-create request returned HTTP 502 without card details, while independent Stellar Mainnet evidence shows the corresponding 35.88 USDC debit settled successfully. No card-delivery evidence is present in the observed trace.",
   "expected_codes": [
     "CLAIMED_FAILED_BUT_SETTLED",
     "SETTLED_BUT_NOT_DELIVERED"
@@ -30,9 +30,8 @@
       "stage": "CLAIMED RESULT",
       "key": "payment_status",
       "value": "failed",
-      "source": "client-http-502",
-      "operation_id": "asgcard-issue17-card-create",
-      "observed_at": "2026-08-30T01:15:39Z"
+      "source": "payment-gated-operation-http-502",
+      "operation_id": "asgcard-issue17-card-create"
     },
     {
       "stage": "ACTUAL SETTLEMENT/FINALITY",
