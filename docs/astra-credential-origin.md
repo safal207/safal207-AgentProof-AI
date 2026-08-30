@@ -51,9 +51,11 @@ They then supply:
 
 Every dispatch should expose an `authorization_id` or `payment_id`. Without
 that identity, Astra can identify a recipient but cannot exclude reuse of the
-same credential across recipients. The two fields are separate identity
-namespaces: equal text in `authorization_id` and `payment_id` does not create a
-match. A scoped delegate must match the same declared field on the target event.
+same credential across recipients. The dispatch must share at least one typed
+identifier with the bound credential, and no shared typed identifier may
+conflict. The two fields are separate identity namespaces: equal text in
+`authorization_id` and `payment_id` does not create a match. A scoped delegate
+must match the same declared field on the target event.
 
 An intermediary is admitted only through an authoritative
 `authorized_credential_delegate_origin` event. Delegate evidence may be global
@@ -83,16 +85,20 @@ Astra compares HTTP(S) origins, not full resource URLs:
 | `CREDENTIAL_DISPATCH_EVIDENCE_MISSING` | Origin verification is required, but no credential recipient appears in the trace. |
 | `CREDENTIAL_DISPATCH_ORIGIN_INVALID` | A reported credential recipient is not a valid HTTP(S) origin. |
 | `CREDENTIAL_IDENTITY_EVIDENCE_MISSING` | A dispatch omits both authorization and payment identity. |
+| `CREDENTIAL_IDENTITY_BINDING_UNRESOLVED` | The bound credential and dispatch expose no common typed identifier. |
+| `CREDENTIAL_IDENTITY_DIVERGENCE` | A typed dispatch identifier conflicts with the credential binding. |
 | `PAYMENT_CREDENTIAL_ORIGIN_DIVERGENCE` | A reusable credential was delivered outside the accepted challenge/delegation boundary. |
 | `CROSS_ORIGIN_CREDENTIAL_REUSE` | One payment identity was dispatched to multiple origins, creating a consumption race. |
 | `SETTLEMENT_CONSUMER_ORIGIN_DIVERGENCE` | Authoritative evidence attributes credential consumption to an unauthorized origin. |
 
 Origin exposure is kept separate from economic outcome:
 
+- identity divergence proves the dispatched credential is not the credential
+  represented by the binding evidence, even if the network origin is correct;
 - dispatch divergence proves the wrong principal received the credential;
-- cross-origin reuse proves multiple principals received the same payment
+- cross-origin reuse proves multiple principals received the same typed payment
   identity;
-- neither alone proves that money moved; and
+- none of those findings alone proves that money moved; and
 - confirmed settlement by the wrong principal requires authoritative consumer
   attribution.
 
