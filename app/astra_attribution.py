@@ -17,6 +17,12 @@ _SETTLED_STATUSES = {
     "succeeded",
 }
 
+_BOUND_BINDING_STATUSES = {
+    "authoritative",
+    "bound",
+    "verified",
+}
+
 _UNRESOLVED_BINDING_STATUSES = {
     "candidate",
     "correlated",
@@ -86,9 +92,9 @@ def verify_settlement_attribution_outcome(
     ``settlement_operation_binding`` reconciliation event whose value includes
     ``status``, ``payment_id``, and optionally ``confidence``.
 
-    The verifier emits an attribution gap instead of promoting the candidate
-    transaction into operation-level settlement, delivery, or reconciliation
-    truth. It reasons only about the supplied trace.
+    A binding is closed only by an authoritative binding event with a bound
+    status. Contextual correlation may identify a strong candidate, but it must
+    not promote the transaction into operation-level truth.
     """
 
     materialized = list(events)
@@ -114,9 +120,12 @@ def verify_settlement_attribution_outcome(
 
         binding_status = _status(binding.value.get("status"))
         confidence = _status(binding.value.get("confidence"))
+        if binding.authoritative and binding_status in _BOUND_BINDING_STATUSES:
+            continue
         if (
             binding_status not in _UNRESOLVED_BINDING_STATUSES
             and confidence not in _UNRESOLVED_BINDING_STATUSES
+            and binding_status not in _BOUND_BINDING_STATUSES
         ):
             continue
 
