@@ -11,6 +11,7 @@ from .astra_verifier import Finding, Stage, StateEvent
 
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
 _DEFAULT_PORTS = {"http": 80, "https": 443}
+_IDENTITY_FIELDS = ("authorization_id", "payment_id")
 
 
 def normalize_origin(value: Any) -> str | None:
@@ -83,22 +84,45 @@ def _latest(events: list[StateEvent], stage: Stage, key: str) -> StateEvent | No
     return matched[-1] if matched else None
 
 
-def _identity(event: StateEvent | None) -> str | None:
-    if event is None:
-        return None
-    return event.authorization_id or event.payment_id
+def _has_identity(event: StateEvent | None) -> bool:
+    return bool(
+        event is not None
+        and any(getattr(event, field) is not None for field in _IDENTITY_FIELDS)
+    )
+
+
+def _delegate_applies(
+    delegate: StateEvent,
+    target: StateEvent | None,
+) -> bool:
+    """Match delegate scope without conflating identity namespaces.
+
+    An unscoped delegate applies to the whole operation. A scoped delegate
+    applies only when every identity field it declares is present with the same
+    value on the target event. Equal strings in ``authorization_id`` and
+    ``payment_id`` are deliberately not interchangeable.
+    """
+
+    scoped = False
+    for field in _IDENTITY_FIELDS:
+        expected = getattr(delegate, field)
+        if expected is None:
+            continue
+        scoped = True
+        if target is None or getattr(target, field) != expected:
+            return False
+    return True if scoped else True
 
 
 def _delegate_origins(
     delegate_events: list[StateEvent],
-    identity: str | None,
+    target: StateEvent | None,
 ) -> set[str]:
-    """Return global delegates plus delegates bound to one payment identity."""
+    """Return global delegates plus delegates scoped to the target identity."""
 
     origins: set[str] = set()
     for event in delegate_events:
-        delegate_identity = _identity(event)
-        if delegate_identity is not None and delegate_identity != identity:
+        if not _delegate_applies(event, target):
             continue
         normalized = normalize_origin(event.value)
         if normalized is not None:
@@ -203,10 +227,9 @@ def verify_payment_credential_origin(
             and event.key == "authorized_credential_delegate_origin"
             and event.authoritative
         ]
-        bound_identity = _identity(bound)
         bound_allowed = {
             challenge_origin,
-            *_delegate_origins(delegate_events, bound_identity),
+            *_delegate_origins(delegate_events, bound),
         }
 
         if bound_origin not in bound_allowed:
@@ -281,7 +304,7 @@ def verify_payment_credential_origin(
         identity_missing = [
             event
             for event, _ in normalized_dispatches
-            if _identity(event) is None
+            if not _has_identity(event)
         ]
         if identity_missing:
             findings.append(
@@ -308,7 +331,7 @@ def verify_payment_credential_origin(
         for event, origin in normalized_dispatches:
             allowed = {
                 challenge_origin,
-                *_delegate_origins(delegate_events, _identity(event)),
+                *_delegate_origins(delegate_events, event),
             }
             if origin not in allowed:
                 unauthorized_pairs.append((event, origin))
@@ -336,16 +359,30 @@ def verify_payment_credential_origin(
                 )
             )
 
-        by_identity: dict[str, list[tuple[StateEvent, str]]] = defaultdict(list)
+        by_identity: dict[
+            tuple[str, str],
+            list[tuple[StateEvent, str]],
+        ] = defaultdict(list)
         for event, origin in normalized_dispatches:
-            identity = _identity(event)
-            if identity is not None:
-                by_identity[identity].append((event, origin))
+            for field in _IDENTITY_FIELDS:
+                value = getattr(event, field)
+                if value is not None:
+                    by_identity[(field, value)].append((event, origin))
 
-        for identity, group in by_identity.items():
+        reused_keys: list[str] = []
+        reused_events: list[StateEvent] = []
+        reused_origins: set[str] = set()
+        for (field, value), group in by_identity.items():
             origins = {origin for _, origin in group}
             if len(origins) <= 1:
                 continue
+            reused_keys.append(f"{field}={value!r}")
+            reused_origins.update(origins)
+            for event, _ in group:
+                if event not in reused_events:
+                    reused_events.append(event)
+
+        if reused_keys:
             findings.append(
                 _finding(
                     code="CROSS_ORIGIN_CREDENTIAL_REUSE",
@@ -353,16 +390,16 @@ def verify_payment_credential_origin(
                     to_stage=Stage.PAYMENT_ATTEMPT,
                     severity="high",
                     explanation=(
-                        f"Payment identity {identity!r} was dispatched to "
-                        f"multiple origins {sorted(origins)!r}, creating a "
-                        "cross-origin consumption race."
+                        f"Payment identity key(s) {sorted(reused_keys)!r} were "
+                        f"dispatched to multiple origins {sorted(reused_origins)!r}, "
+                        "creating a cross-origin consumption race."
                     ),
                     operation_id=operation_id,
                     evidence=[
                         declaration,
                         challenge,
                         bound,
-                        *(event for event, _ in group),
+                        *reused_events,
                     ],
                 )
             )
@@ -379,7 +416,7 @@ def verify_payment_credential_origin(
             origin = normalize_origin(event.value)
             allowed = {
                 challenge_origin,
-                *_delegate_origins(delegate_events, _identity(event)),
+                *_delegate_origins(delegate_events, event),
             }
             if origin is None or origin not in allowed:
                 unauthorized_consumers.append(event)
