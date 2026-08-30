@@ -28,6 +28,17 @@ _DIMENSION_FINDINGS = {
     "operation_id": ("SESSION_OPERATION_CROSSOVER", "high", "business operation"),
 }
 
+_SETTLED_STATUSES = {
+    "captured",
+    "complete",
+    "completed",
+    "confirmed",
+    "paid",
+    "settled",
+    "success",
+    "succeeded",
+}
+
 
 @dataclass(frozen=True)
 class _Contract:
@@ -72,6 +83,12 @@ def _text(value: Any) -> str | None:
         normalized = str(value).strip()
         return normalized or None
     return None
+
+
+def _status(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value).strip().lower()
 
 
 def _principal_value(event: StateEvent, dimension: str) -> _PrincipalValue:
@@ -150,6 +167,14 @@ def _session_events(
     ]
 
 
+def _matches_attempt(use: StateEvent, finality: StateEvent) -> bool:
+    if use.payment_id is not None and finality.payment_id is not None:
+        return use.payment_id == finality.payment_id
+    if use.attempt_id is not None and finality.attempt_id is not None:
+        return use.attempt_id == finality.attempt_id
+    return False
+
+
 def verify_payment_session_principal_binding(
     events: Iterable[StateEvent],
 ) -> list[Finding]:
@@ -161,9 +186,9 @@ def verify_payment_session_principal_binding(
     principals, while ``payment_session_use`` records the principals observed at
     a real payment attempt.
 
-    This verifier proves attempt-context divergence only. It does not infer that
-    a backend accepted the crossed use or that settlement occurred; those
-    stronger conclusions require separate authoritative finality evidence.
+    Attempt-context divergence does not prove backend acceptance. A stronger
+    settlement-session finding is emitted only when authoritative finality can
+    be tied to the observed attempt through ``payment_id`` or ``attempt_id``.
     """
 
     materialized = list(events)
@@ -177,6 +202,7 @@ def verify_payment_session_principal_binding(
     ]
 
     contracts: dict[str | None, _Contract] = {}
+    conflicted_contracts: set[str | None] = set()
     for declaration in raw_declarations:
         required, dimensions, valid = _contract(declaration.value)
         if not required:
@@ -197,9 +223,32 @@ def verify_payment_session_principal_binding(
                 )
             )
             continue
-        contracts[declaration.session_id] = _Contract(declaration, dimensions)
 
-    if not contracts:
+        contract_key = declaration.session_id
+        existing = contracts.get(contract_key)
+        if existing is not None and existing.dimensions != dimensions:
+            findings.append(
+                _finding(
+                    code="PAYMENT_SESSION_CONTRACT_CONFLICT",
+                    from_stage=Stage.POLICY_DECISION,
+                    to_stage=Stage.PAYMENT_ATTEMPT,
+                    severity="high",
+                    explanation=(
+                        "The same payment-session contract scope declares "
+                        "conflicting principal dimensions."
+                    ),
+                    operation_id=declaration.operation_id,
+                    evidence=[existing.event, declaration],
+                )
+            )
+            contracts.pop(contract_key, None)
+            conflicted_contracts.add(contract_key)
+            continue
+        if contract_key in conflicted_contracts:
+            continue
+        contracts[contract_key] = _Contract(declaration, dimensions)
+
+    if not contracts and not conflicted_contracts:
         return findings
 
     binding_events = [
@@ -213,6 +262,14 @@ def verify_payment_session_principal_binding(
         for event in materialized
         if event.stage == Stage.PAYMENT_ATTEMPT
         and event.key == "payment_session_use"
+    ]
+    settled_finalities = [
+        event
+        for event in materialized
+        if event.stage == Stage.ACTUAL_SETTLEMENT_FINALITY
+        and event.key == "payment_status"
+        and event.authoritative
+        and _status(event.value) in _SETTLED_STATUSES
     ]
 
     global_contract = contracts.get(None)
@@ -239,6 +296,11 @@ def verify_payment_session_principal_binding(
         if event.session_id is not None
     }
     session_ids.update(session_id for session_id in contracts if session_id is not None)
+    session_ids.update(
+        session_id
+        for session_id in conflicted_contracts
+        if session_id is not None
+    )
 
     if global_contract and not session_ids:
         findings.append(
@@ -258,6 +320,8 @@ def verify_payment_session_principal_binding(
         return findings
 
     for session_id in sorted(session_ids):
+        if session_id in conflicted_contracts:
+            continue
         contract = contracts.get(session_id) or global_contract
         if contract is None:
             continue
@@ -396,6 +460,56 @@ def verify_payment_session_principal_binding(
             operation = observed.get("operation_id")
             if operation is not None:
                 resolved_operations.add(operation)
+
+            matched_finalities = [
+                finality
+                for finality in settled_finalities
+                if _matches_attempt(use, finality)
+            ]
+            missing_session = [
+                finality
+                for finality in matched_finalities
+                if finality.session_id is None
+            ]
+            crossed_session = [
+                finality
+                for finality in matched_finalities
+                if finality.session_id is not None
+                and finality.session_id != session_id
+            ]
+
+            if missing_session:
+                findings.append(
+                    _finding(
+                        code="SETTLEMENT_SESSION_BINDING_UNRESOLVED",
+                        from_stage=Stage.PAYMENT_ATTEMPT,
+                        to_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                        severity="medium",
+                        explanation=(
+                            "Authoritative settlement matches the payment attempt "
+                            "but omits session_id, so session attribution remains "
+                            "unresolved."
+                        ),
+                        operation_id=use.operation_id,
+                        evidence=[contract.event, binding, use, *missing_session],
+                    )
+                )
+
+            if crossed_session:
+                findings.append(
+                    _finding(
+                        code="SETTLEMENT_SESSION_CROSSOVER",
+                        from_stage=Stage.PAYMENT_ATTEMPT,
+                        to_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                        severity="critical",
+                        explanation=(
+                            f"Authoritative settlement for session-bound attempt "
+                            f"{session_id!r} is attributed to another session."
+                        ),
+                        operation_id=use.operation_id,
+                        evidence=[contract.event, binding, use, *crossed_session],
+                    )
+                )
 
         if "operation_id" in contract.dimensions and len(resolved_operations) > 1:
             findings.append(
