@@ -340,6 +340,55 @@ def test_wrong_authoritative_settlement_consumer_is_critical():
     assert finding.severity == "critical"
 
 
+def test_settlement_consumer_identity_mismatch_is_critical_at_correct_origin():
+    operation_id = "op-consumer-mismatch"
+    result = findings(
+        [
+            origin_contract(operation_id),
+            *challenge_and_binding(operation_id),
+            dispatch(operation_id, "https://merchant.example"),
+            event(
+                Stage.ACTUAL_SETTLEMENT_FINALITY,
+                "credential_consumer_origin",
+                "https://merchant.example",
+                "settlement-attribution",
+                authoritative=True,
+                operation_id=operation_id,
+                authorization_id="auth-2",
+            ),
+        ]
+    )
+
+    finding = next(
+        item
+        for item in result
+        if item.code == "SETTLEMENT_CREDENTIAL_IDENTITY_DIVERGENCE"
+    )
+    assert finding.severity == "critical"
+
+
+def test_settlement_consumer_identity_without_common_namespace_is_unresolved():
+    operation_id = "op-consumer-unresolved"
+    found = codes(
+        [
+            origin_contract(operation_id),
+            *challenge_and_binding(operation_id),
+            dispatch(operation_id, "https://merchant.example"),
+            event(
+                Stage.ACTUAL_SETTLEMENT_FINALITY,
+                "credential_consumer_origin",
+                "https://merchant.example",
+                "settlement-attribution",
+                authoritative=True,
+                operation_id=operation_id,
+                payment_id="auth-1",
+            ),
+        ]
+    )
+
+    assert found == {"SETTLEMENT_CREDENTIAL_IDENTITY_UNRESOLVED"}
+
+
 def test_missing_or_malformed_principal_evidence_stops_stronger_claims():
     operation_id = "op-7"
     found = codes(
