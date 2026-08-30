@@ -2,8 +2,8 @@
 
 A payment session can cap spend and expire correctly while still being used by
 the wrong agent, wallet, merchant, or business operation. This profile verifies
-the identity boundary between an approved session and the payment attempt that
-uses it.
+the identity boundary between an approved session, the payment attempt that
+uses it, and any independently attributable settlement.
 
 ## Public evidence boundary
 
@@ -99,7 +99,10 @@ A local variable name, plugin object, prompt, or orchestration label is not an
 authoritative session binding by itself.
 
 A declaration may list only the dimensions the integration actually promises.
-A dimension omitted from the contract is not inferred or checked.
+A dimension omitted from the contract is not inferred or checked. Two required
+contracts at the same scope may not silently declare different dimension sets;
+that is a contract conflict rather than a later declaration overriding an
+earlier, stronger boundary.
 
 ## Merchant origin comparison
 
@@ -112,11 +115,26 @@ A dimension omitted from the contract is not inferred or checked.
 - non-default ports remain significant;
 - userinfo, malformed ports, and non-HTTP(S) values are rejected.
 
+## Settlement binding
+
+A crossed attempt-context does not establish that the backend accepted or
+settled the payment. Astra only attributes settlement to a session when an
+authoritative settled event shares the attempt's `payment_id` or `attempt_id`.
+For that matched event:
+
+- a missing `session_id` remains unresolved;
+- a different `session_id` is a critical settlement crossover;
+- unrelated settlement events do not strengthen the session claim.
+
+This avoids correlating payments merely because they happened in the same
+operation or time window.
+
 ## Findings
 
 | Code | Meaning |
 |---|---|
 | `PAYMENT_SESSION_CONTRACT_INVALID` | The opt-in contract has no valid supported dimensions. |
+| `PAYMENT_SESSION_CONTRACT_CONFLICT` | The same contract scope declares conflicting dimension sets. |
 | `PAYMENT_SESSION_BINDING_MISSING` | The session has no authoritative principal binding. |
 | `PAYMENT_SESSION_BINDING_INCOMPLETE` | Required binding dimensions are absent or invalid. |
 | `PAYMENT_SESSION_BINDING_CONFLICT` | Authoritative records disagree about one session's principals. |
@@ -128,10 +146,13 @@ A dimension omitted from the contract is not inferred or checked.
 | `SESSION_MERCHANT_CROSSOVER` | The payment attempt targets a different merchant origin. |
 | `SESSION_OPERATION_CROSSOVER` | The payment attempt belongs to a different business obligation. |
 | `SESSION_ID_REUSED_ACROSS_OPERATIONS` | An operation-scoped session is observed across several operations. |
+| `SETTLEMENT_SESSION_BINDING_UNRESOLVED` | A matched authoritative settlement omits session identity. |
+| `SETTLEMENT_SESSION_CROSSOVER` | A matched authoritative settlement is attributed to another session. |
 
 Missing or incomplete evidence produces `UNRESOLVED`. A principal mismatch at
-the observed payment attempt produces `DIVERGED`. Neither alone proves the
-backend accepted the crossed combination or that value moved.
+the observed payment attempt produces `DIVERGED`, but does not alone prove
+backend acceptance or value movement. `SETTLEMENT_SESSION_CROSSOVER` requires
+independent settled evidence tied to the same payment attempt.
 
 ## Fixture set
 
@@ -181,7 +202,8 @@ DIVERGED
 `agentcore_session_bound_reconciled.json`
 
 The binding and use agree on user, agent, instrument, merchant, and operation;
-then one settlement, receipt, delivery, and terminal reconciliation complete.
+the same `payment_id` then links the attempt to one authoritative settlement in
+the same session, followed by receipt, delivery, and terminal reconciliation.
 Expected result: `VERIFIED`.
 
 ## Controlled service probe
