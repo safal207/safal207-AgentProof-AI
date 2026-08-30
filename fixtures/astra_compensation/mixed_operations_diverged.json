@@ -1,0 +1,139 @@
+{
+  "trace_id": "astra-compensated-mixed-operations-001",
+  "protocol": "provider-neutral/refund-compensation",
+  "scenario": "One failed operation is fully compensated, while a second settled operation still has an unresolved provider failure.",
+  "expected_codes": [
+    "SETTLED_BUT_NOT_DELIVERED",
+    "SETTLED_FULFILLMENT_FAILED"
+  ],
+  "expected_verdict": "DIVERGED",
+  "events": [
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "operation_id": "mixed-op-compensated",
+      "payment_id": "mixed-original-compensated"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "settled_amount_minor",
+      "value": "1000",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "operation_id": "mixed-op-compensated",
+      "payment_id": "mixed-original-compensated"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "settlement_asset",
+      "value": "test:USD:asset",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "operation_id": "mixed-op-compensated",
+      "payment_id": "mixed-original-compensated"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "issuer_status",
+      "value": "failed",
+      "source": "issuer-terminal-record",
+      "authoritative": true,
+      "operation_id": "mixed-op-compensated"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "failed",
+      "source": "merchant-delivery-record",
+      "operation_id": "mixed-op-compensated"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "candidate_refund_status",
+      "value": "refunded",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "payment_id": "mixed-refund-compensated"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "refunded_amount_minor",
+      "value": "1000",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "payment_id": "mixed-refund-compensated"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "refund_asset",
+      "value": "test:USD:asset",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "payment_id": "mixed-refund-compensated"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "refund_operation_binding",
+      "value": {
+        "status": "bound",
+        "payment_id": "mixed-refund-compensated"
+      },
+      "source": "provider-reconciliation-record",
+      "authoritative": true,
+      "operation_id": "mixed-op-compensated"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "fully_refunded",
+      "source": "provider-reconciliation-record",
+      "authoritative": true,
+      "operation_id": "mixed-op-compensated"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "operation_id": "mixed-op-unresolved",
+      "payment_id": "mixed-original-unresolved"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "settled_amount_minor",
+      "value": "2000",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "operation_id": "mixed-op-unresolved",
+      "payment_id": "mixed-original-unresolved"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "settlement_asset",
+      "value": "test:USD:asset",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "operation_id": "mixed-op-unresolved",
+      "payment_id": "mixed-original-unresolved"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "issuer_status",
+      "value": "failed",
+      "source": "issuer-terminal-record",
+      "authoritative": true,
+      "operation_id": "mixed-op-unresolved"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "failed",
+      "source": "merchant-delivery-record",
+      "operation_id": "mixed-op-unresolved"
+    }
+  ]
+}

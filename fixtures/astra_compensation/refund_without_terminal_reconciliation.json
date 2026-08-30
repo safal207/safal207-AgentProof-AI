@@ -1,0 +1,97 @@
+{
+  "trace_id": "astra-compensated-no-terminal-reconciliation-001",
+  "protocol": "provider-neutral/refund-compensation",
+  "scenario": "The exact same-asset refund is independently finalized and bound, but no terminal reconciliation status closes the operation.",
+  "expected_codes": [
+    "CLAIMED_FAILED_BUT_SETTLED",
+    "SETTLED_BUT_NOT_DELIVERED",
+    "SETTLED_FULFILLMENT_FAILED"
+  ],
+  "expected_verdict": "DIVERGED",
+  "events": [
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_status",
+      "value": "failed",
+      "source": "merchant-http-response",
+      "operation_id": "norecon-op-001"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "operation_id": "norecon-op-001",
+      "payment_id": "norecon-original-001"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "settled_amount_minor",
+      "value": "35880000",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "operation_id": "norecon-op-001",
+      "payment_id": "norecon-original-001"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "settlement_asset",
+      "value": "stellar:USDC:issuer-mainnet",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "operation_id": "norecon-op-001",
+      "payment_id": "norecon-original-001"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "issuer_status",
+      "value": "failed",
+      "source": "issuer-terminal-record",
+      "authoritative": true,
+      "operation_id": "norecon-op-001"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "failed",
+      "source": "merchant-delivery-record",
+      "operation_id": "norecon-op-001"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "candidate_refund_status",
+      "value": "refunded",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "payment_id": "norecon-refund-001"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "refunded_amount_minor",
+      "value": "35880000",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "payment_id": "norecon-refund-001"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "refund_asset",
+      "value": "stellar:USDC:issuer-mainnet",
+      "source": "independent-ledger",
+      "authoritative": true,
+      "payment_id": "norecon-refund-001"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "refund_operation_binding",
+      "value": {
+        "status": "bound",
+        "payment_id": "norecon-refund-001"
+      },
+      "source": "provider-reconciliation-record",
+      "authoritative": true,
+      "operation_id": "norecon-op-001"
+    }
+  ]
+}
