@@ -42,8 +42,12 @@ _SETTLED_STATUSES = {
 
 @dataclass(frozen=True)
 class _Contract:
-    event: StateEvent
+    events: tuple[StateEvent, ...]
     dimensions: tuple[str, ...]
+
+    @property
+    def event(self) -> StateEvent:
+        return self.events[-1]
 
 
 @dataclass(frozen=True)
@@ -70,6 +74,32 @@ def _contract(value: Any) -> tuple[bool, tuple[str, ...], bool]:
         if raw not in dimensions:
             dimensions.append(raw)
     return required, tuple(dimensions), bool(dimensions)
+
+
+def _merge_contracts(
+    global_contract: _Contract | None,
+    session_contract: _Contract | None,
+) -> _Contract | None:
+    """Apply global requirements monotonically to one session.
+
+    A session-specific contract may add dimensions, but it cannot remove a
+    dimension required globally. Keeping the canonical dimension order makes
+    fingerprints deterministic across equivalent declaration orderings.
+    """
+
+    if global_contract is None:
+        return session_contract
+    if session_contract is None:
+        return global_contract
+
+    required = set(global_contract.dimensions) | set(session_contract.dimensions)
+    dimensions = tuple(
+        dimension for dimension in _ALLOWED_DIMENSIONS if dimension in required
+    )
+    return _Contract(
+        events=(*global_contract.events, *session_contract.events),
+        dimensions=dimensions,
+    )
 
 
 def _mapping(event: StateEvent) -> Mapping[str, Any]:
@@ -186,6 +216,9 @@ def verify_payment_session_principal_binding(
     principals, while ``payment_session_use`` records the principals observed at
     a real payment attempt.
 
+    Global requirements are monotonic: a session-specific contract may add
+    dimensions but cannot remove globally required dimensions.
+
     Attempt-context divergence does not prove backend acceptance. A stronger
     settlement-session finding is emitted only when authoritative finality can
     be tied to the observed attempt through ``payment_id`` or ``attempt_id``.
@@ -225,6 +258,9 @@ def verify_payment_session_principal_binding(
             continue
 
         contract_key = declaration.session_id
+        if contract_key in conflicted_contracts:
+            continue
+
         existing = contracts.get(contract_key)
         if existing is not None and existing.dimensions != dimensions:
             findings.append(
@@ -238,17 +274,29 @@ def verify_payment_session_principal_binding(
                         "conflicting principal dimensions."
                     ),
                     operation_id=declaration.operation_id,
-                    evidence=[existing.event, declaration],
+                    evidence=[*existing.events, declaration],
                 )
             )
             contracts.pop(contract_key, None)
             conflicted_contracts.add(contract_key)
             continue
-        if contract_key in conflicted_contracts:
-            continue
-        contracts[contract_key] = _Contract(declaration, dimensions)
+
+        if existing is None:
+            contracts[contract_key] = _Contract((declaration,), dimensions)
+        else:
+            contracts[contract_key] = _Contract(
+                (*existing.events, declaration),
+                dimensions,
+            )
 
     if not contracts and not conflicted_contracts:
+        return findings
+
+    # A conflicting global contract leaves no stable minimum requirement for any
+    # session. The high-severity contract finding already captures the failure;
+    # evaluating narrower session contracts could misleadingly produce a clean
+    # result under an unknown global policy.
+    if None in conflicted_contracts:
         return findings
 
     binding_events = [
@@ -286,7 +334,7 @@ def verify_payment_session_principal_binding(
                     "the intended session binding cannot be selected."
                 ),
                 operation_id=None,
-                evidence=[global_contract.event, *unscoped_uses],
+                evidence=[*global_contract.events, *unscoped_uses],
             )
         )
 
@@ -295,7 +343,9 @@ def verify_payment_session_principal_binding(
         for event in [*binding_events, *use_events]
         if event.session_id is not None
     }
-    session_ids.update(session_id for session_id in contracts if session_id is not None)
+    session_ids.update(
+        session_id for session_id in contracts if session_id is not None
+    )
     session_ids.update(
         session_id
         for session_id in conflicted_contracts
@@ -314,7 +364,7 @@ def verify_payment_session_principal_binding(
                     "contains no identifiable payment session."
                 ),
                 operation_id=global_contract.event.operation_id,
-                evidence=[global_contract.event],
+                evidence=[*global_contract.events],
             )
         )
         return findings
@@ -322,7 +372,11 @@ def verify_payment_session_principal_binding(
     for session_id in sorted(session_ids):
         if session_id in conflicted_contracts:
             continue
-        contract = contracts.get(session_id) or global_contract
+
+        contract = _merge_contracts(
+            global_contract,
+            contracts.get(session_id),
+        )
         if contract is None:
             continue
 
@@ -347,7 +401,7 @@ def verify_payment_session_principal_binding(
                         "binding in the supplied trace."
                     ),
                     operation_id=contract.event.operation_id,
-                    evidence=[contract.event],
+                    evidence=[*contract.events],
                 )
             )
             continue
@@ -367,7 +421,7 @@ def verify_payment_session_principal_binding(
                             f"for required dimension(s) {list(unresolved)!r}."
                         ),
                         operation_id=binding.operation_id,
-                        evidence=[contract.event, binding],
+                        evidence=[*contract.events, binding],
                     )
                 )
                 continue
@@ -377,7 +431,10 @@ def verify_payment_session_principal_binding(
             continue
 
         fingerprints = {
-            tuple((dimension, values[dimension]) for dimension in contract.dimensions)
+            tuple(
+                (dimension, values[dimension])
+                for dimension in contract.dimensions
+            )
             for _, values in complete_bindings
         }
         if len(fingerprints) > 1:
@@ -392,7 +449,10 @@ def verify_payment_session_principal_binding(
                         "principal bindings."
                     ),
                     operation_id=None,
-                    evidence=[contract.event, *(item[0] for item in complete_bindings)],
+                    evidence=[
+                        *contract.events,
+                        *(item[0] for item in complete_bindings),
+                    ],
                 )
             )
             continue
@@ -411,7 +471,7 @@ def verify_payment_session_principal_binding(
                         "no observed payment-session use event."
                     ),
                     operation_id=binding.operation_id,
-                    evidence=[contract.event, binding],
+                    evidence=[*contract.events, binding],
                 )
             )
             continue
@@ -431,7 +491,7 @@ def verify_payment_session_principal_binding(
                             f"required dimension(s) {list(unresolved)!r}."
                         ),
                         operation_id=use.operation_id,
-                        evidence=[contract.event, binding, use],
+                        evidence=[*contract.events, binding, use],
                     )
                 )
 
@@ -453,7 +513,7 @@ def verify_payment_session_principal_binding(
                             f"used {observed[dimension]!r}."
                         ),
                         operation_id=use.operation_id,
-                        evidence=[contract.event, binding, use],
+                        evidence=[*contract.events, binding, use],
                     )
                 )
 
@@ -491,7 +551,12 @@ def verify_payment_session_principal_binding(
                             "unresolved."
                         ),
                         operation_id=use.operation_id,
-                        evidence=[contract.event, binding, use, *missing_session],
+                        evidence=[
+                            *contract.events,
+                            binding,
+                            use,
+                            *missing_session,
+                        ],
                     )
                 )
 
@@ -503,15 +568,23 @@ def verify_payment_session_principal_binding(
                         to_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
                         severity="critical",
                         explanation=(
-                            f"Authoritative settlement for session-bound attempt "
+                            "Authoritative settlement for session-bound attempt "
                             f"{session_id!r} is attributed to another session."
                         ),
                         operation_id=use.operation_id,
-                        evidence=[contract.event, binding, use, *crossed_session],
+                        evidence=[
+                            *contract.events,
+                            binding,
+                            use,
+                            *crossed_session,
+                        ],
                     )
                 )
 
-        if "operation_id" in contract.dimensions and len(resolved_operations) > 1:
+        if (
+            "operation_id" in contract.dimensions
+            and len(resolved_operations) > 1
+        ):
             findings.append(
                 _finding(
                     code="SESSION_ID_REUSED_ACROSS_OPERATIONS",
@@ -523,7 +596,7 @@ def verify_payment_session_principal_binding(
                         f"multiple business operations {sorted(resolved_operations)!r}."
                     ),
                     operation_id=None,
-                    evidence=[contract.event, binding, *uses],
+                    evidence=[*contract.events, binding, *uses],
                 )
             )
 
