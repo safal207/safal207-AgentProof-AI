@@ -10,6 +10,7 @@ EXPECTED_FIXTURES = {
     "ap2_token_consumed_psp_failed.json",
     "obolus_x402_new_nonce_double_settlement.json",
     "obolus_x402_same_authorization_reconciled.json",
+    "stellar_asgcard_settled_without_delivery.json",
     "x402_auth_capture_delivery_before_capture.json",
     "x402_authorization_window.json",
     "x402_batch_settlement_untrusted_state.json",
