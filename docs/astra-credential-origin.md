@@ -51,7 +51,9 @@ They then supply:
 
 Every dispatch should expose an `authorization_id` or `payment_id`. Without
 that identity, Astra can identify a recipient but cannot exclude reuse of the
-same credential across recipients.
+same credential across recipients. The two fields are separate identity
+namespaces: equal text in `authorization_id` and `payment_id` does not create a
+match. A scoped delegate must match the same declared field on the target event.
 
 An intermediary is admitted only through an authoritative
 `authorized_credential_delegate_origin` event. Delegate evidence may be global
