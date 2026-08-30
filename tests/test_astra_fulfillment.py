@@ -229,6 +229,24 @@ def test_authoritative_bound_refund_closes_attribution_gap():
     )
 
 
+def test_authoritative_bound_with_unresolved_confidence_stays_open():
+    contradictory = event(
+        Stage.RECONCILIATION,
+        "refund_operation_binding",
+        {
+            "status": "bound",
+            "confidence": "unresolved",
+            "payment_id": "refund-1",
+        },
+        "provider-reconciliation-record",
+        authoritative=True,
+        operation_id="operation-1",
+    )
+
+    found = codes([refund_movement(), contradictory])
+    assert "REFUND_OPERATION_BINDING_UNRESOLVED" in found
+
+
 def test_later_authoritative_bound_record_supersedes_unresolved_history():
     found = codes(
         [
