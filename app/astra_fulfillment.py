@@ -111,12 +111,29 @@ def _finding(
     )
 
 
+def _binding_disposition(event: StateEvent) -> tuple[str | None, str | None]:
+    if not isinstance(event.value, Mapping):
+        return None, None
+    return _status(event.value.get("status")), _status(event.value.get("confidence"))
+
+
+def _is_recognized_binding(event: StateEvent) -> bool:
+    status, confidence = _binding_disposition(event)
+    return bool(
+        status in _BOUND_STATUSES
+        or status in _UNRESOLVED_STATUSES
+        or confidence in _UNRESOLVED_STATUSES
+    )
+
+
 def _latest_effective_binding(group: list[StateEvent]) -> StateEvent:
     """Prefer the latest authoritative reconciliation event when one exists.
 
     A later untrusted marker must not overwrite an authoritative provider
     reconciliation record. When several authoritative records exist, trace
-    order still decides which authoritative state is current.
+    order still decides which authoritative state is current. Callers provide
+    only recognized binding states, so malformed records cannot suppress a
+    previously meaningful unresolved or bound state.
     """
 
     authoritative = [event for event in group if event.authoritative]
@@ -238,6 +255,8 @@ def verify_provider_fulfillment_outcome(
             continue
         if not isinstance(binding.value, Mapping):
             continue
+        if not _is_recognized_binding(binding):
+            continue
 
         payment_id = binding.value.get("payment_id")
         if not isinstance(payment_id, str) or not payment_id:
@@ -252,15 +271,8 @@ def verify_provider_fulfillment_outcome(
 
     for (operation_id, payment_id), group in binding_groups.items():
         binding = _latest_effective_binding(group)
-        binding_status = _status(binding.value.get("status"))
-        confidence = _status(binding.value.get("confidence"))
+        binding_status, confidence = _binding_disposition(binding)
         if binding.authoritative and binding_status in _BOUND_STATUSES:
-            continue
-        if (
-            binding_status not in _UNRESOLVED_STATUSES
-            and confidence not in _UNRESOLVED_STATUSES
-            and binding_status not in _BOUND_STATUSES
-        ):
             continue
 
         refund = candidate_refunds_by_payment[payment_id]
