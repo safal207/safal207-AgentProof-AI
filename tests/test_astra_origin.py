@@ -191,6 +191,62 @@ def test_delegate_for_another_authorization_does_not_leak_authority():
     }
 
 
+def test_equal_strings_in_different_identity_fields_do_not_authorize_delegate():
+    operation_id = "op-cross-type-delegate"
+    found = codes(
+        [
+            origin_contract(operation_id),
+            *challenge_and_binding(operation_id),
+            delegate(
+                operation_id,
+                "https://proxy.example",
+                authorization_id="shared-id",
+            ),
+            event(
+                Stage.PAYMENT_ATTEMPT,
+                "credential_dispatch_origin",
+                "https://proxy.example",
+                "request-log",
+                operation_id=operation_id,
+                attempt_id="attempt-cross-type",
+                payment_id="shared-id",
+            ),
+        ]
+    )
+
+    assert found == {"PAYMENT_CREDENTIAL_ORIGIN_DIVERGENCE"}
+
+
+def test_equal_strings_in_different_identity_fields_do_not_imply_reuse():
+    operation_id = "op-cross-type-reuse"
+    found = codes(
+        [
+            origin_contract(operation_id),
+            *challenge_and_binding(operation_id),
+            event(
+                Stage.PAYMENT_ATTEMPT,
+                "credential_dispatch_origin",
+                "https://merchant.example",
+                "merchant-log",
+                operation_id=operation_id,
+                attempt_id="attempt-auth",
+                authorization_id="shared-id",
+            ),
+            event(
+                Stage.PAYMENT_ATTEMPT,
+                "credential_dispatch_origin",
+                "https://redirect.example",
+                "redirect-log",
+                operation_id=operation_id,
+                attempt_id="attempt-payment",
+                payment_id="shared-id",
+            ),
+        ]
+    )
+
+    assert found == {"PAYMENT_CREDENTIAL_ORIGIN_DIVERGENCE"}
+
+
 def test_non_authoritative_delegate_is_not_permission():
     operation_id = "op-5"
     found = codes(
