@@ -274,6 +274,7 @@ def verify_provider_fulfillment_outcome(
         binding_status, confidence = _binding_disposition(binding)
         binding_is_terminal = bool(
             binding.authoritative
+            and bool(operation_id)
             and binding_status in _BOUND_STATUSES
             and confidence not in _UNRESOLVED_STATUSES
         )
