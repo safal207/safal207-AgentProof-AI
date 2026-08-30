@@ -5,6 +5,7 @@ from dataclasses import replace
 
 from .astra_attribution import verify_settlement_attribution_outcome
 from .astra_commitment import verify_terminal_commitment_outcome
+from .astra_fulfillment import verify_provider_fulfillment_outcome
 from .astra_multileg import verify_multileg_causal_outcome
 from .astra_retry import verify_indeterminate_retry_outcome
 from .astra_verifier import (
@@ -78,6 +79,7 @@ def verify_causal_economic_outcome(
         *verify_terminal_commitment_outcome(materialized),
         *verify_indeterminate_retry_outcome(materialized),
         *verify_settlement_attribution_outcome(materialized),
+        *verify_provider_fulfillment_outcome(materialized),
     ]
 
 
@@ -89,6 +91,7 @@ __all__ = [
     "verify_causal_economic_outcome",
     "verify_indeterminate_retry_outcome",
     "verify_multileg_causal_outcome",
+    "verify_provider_fulfillment_outcome",
     "verify_settlement_attribution_outcome",
     "verify_terminal_commitment_outcome",
 ]
