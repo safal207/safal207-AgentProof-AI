@@ -257,6 +257,30 @@ def test_later_untrusted_bound_marker_cannot_override_authoritative_unresolved_s
     assert "REFUND_OPERATION_BINDING_UNRESOLVED" in found
 
 
+def test_malformed_authoritative_binding_cannot_hide_unresolved_state():
+    malformed = event(
+        Stage.RECONCILIATION,
+        "refund_operation_binding",
+        {
+            "status": "provider-specific-garbage",
+            "payment_id": "refund-1",
+        },
+        "malformed-provider-record",
+        authoritative=True,
+        operation_id="operation-1",
+    )
+
+    found = codes(
+        [
+            refund_movement(),
+            refund_binding(status="unresolved", authoritative=False),
+            malformed,
+        ]
+    )
+
+    assert "REFUND_OPERATION_BINDING_UNRESOLVED" in found
+
+
 def test_all_provider_fulfillment_fixtures_match_oracles():
     paths = sorted(FIXTURES.glob("*.json"))
     assert {path.name for path in paths} == EXPECTED_FIXTURES
