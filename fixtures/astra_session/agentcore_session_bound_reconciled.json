@@ -1,7 +1,7 @@
 {
   "trace_id": "astra-agentcore-session-bound-green-001",
   "protocol": "aws-agentcore-payments/multi-agent",
-  "scenario": "A research-agent payment session is authoritatively bound to one user, instrument, merchant, and operation; the observed use matches and one settlement, receipt, delivery, and terminal reconciliation agree.",
+  "scenario": "A research-agent payment session is authoritatively bound to one user, instrument, merchant, and operation; the observed use matches and one same-identity settlement, receipt, delivery, and terminal reconciliation agree.",
   "expected_codes": [],
   "expected_verdict": "VERIFIED",
   "events": [
@@ -79,7 +79,7 @@
       "session_id": "session-a",
       "operation_id": "research-call-005",
       "attempt_id": "research-attempt-005",
-      "payment_id": "settlement-tx-005"
+      "payment_id": "process-payment-005"
     },
     {
       "stage": "RECEIPT",
@@ -88,7 +88,7 @@
       "source": "merchant-payment-receipt",
       "session_id": "session-a",
       "operation_id": "research-call-005",
-      "payment_id": "settlement-tx-005"
+      "payment_id": "process-payment-005"
     },
     {
       "stage": "RESOURCE/OUTCOME DELIVERY",
