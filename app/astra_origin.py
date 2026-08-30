@@ -545,7 +545,9 @@ def verify_payment_credential_origin(
             )
 
         unauthorized_consumers: list[StateEvent] = []
-        for event in consumers:
+        for event, relation in consumer_relations:
+            if relation != "matched":
+                continue
             origin = normalize_origin(event.value)
             allowed = {
                 challenge_origin,
