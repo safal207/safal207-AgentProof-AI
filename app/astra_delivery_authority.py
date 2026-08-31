@@ -53,6 +53,11 @@ _SAFE_CACHE_STATUSES = {
 _DELIVERED_STATUSES = {"complete", "completed", "delivered", "success", "succeeded"}
 _ENTITLEMENT_STATUSES = {"active", "granted", "valid"}
 _REPLAY_MARKERS = {"replay", "replayed", "retry", "same_authorization_replay"}
+_SUPPORTED_BASES = {
+    "non_payment_entitlement",
+    "settlement_finality",
+    "verification_cache",
+}
 
 
 @dataclass(frozen=True)
@@ -237,6 +242,30 @@ def _valid_non_payment_entitlement(
     return candidates[-1] if candidates else None
 
 
+def _recognized_cache_state(
+    events: list[tuple[int, StateEvent]],
+    *,
+    after: int,
+    before_or_at: int | None,
+    reference: StateEvent,
+) -> tuple[int, StateEvent] | None:
+    candidates = _matching(
+        events,
+        after=after,
+        before_or_at=before_or_at,
+        stage=Stage.RECONCILIATION,
+        key="admission_cache_status",
+        reference=reference,
+        authoritative=True,
+    )
+    recognized = [
+        (index, event)
+        for index, event in candidates
+        if _status(event.value) in (_ACTIVE_CACHE_STATUSES | _SAFE_CACHE_STATUSES)
+    ]
+    return recognized[-1] if recognized else None
+
+
 def verify_finality_bound_delivery_authority(
     events: Iterable[StateEvent],
 ) -> list[Finding]:
@@ -248,9 +277,9 @@ def verify_finality_bound_delivery_authority(
 
     Every authoritative failed-finality boundary is evaluated in trace order.
     A settlement observed only after delivery cannot retroactively authorize
-    that earlier delivery. Replay delivery is claimed only when the same typed
-    payment identity is observed after failure and no matching settlement or
-    independently authorized non-payment entitlement precedes delivery.
+    that earlier delivery. Cache authority is evaluated at the first reuse
+    boundary (or at the end of an unresolved failure), so a revocation recorded
+    only after replay cannot erase the earlier unsafe state.
     """
 
     indexed = list(enumerate(events))
@@ -362,7 +391,11 @@ def verify_finality_bound_delivery_authority(
                             "payment identity."
                         ),
                         operation_id=operation_id,
-                        evidence=[*contract.events, verification, *(e for _, e in finalities)],
+                        evidence=[
+                            *contract.events,
+                            verification,
+                            *(event for _, event in finalities),
+                        ],
                     ),
                 )
                 continue
@@ -376,71 +409,6 @@ def verify_finality_bound_delivery_authority(
                 continue
 
             for failure_index, failure in failed_finalities:
-                next_settlement = next(
-                    (
-                        (index, event)
-                        for index, event in terminal_finalities
-                        if index > failure_index
-                        and _status(event.value) in _SETTLED_STATUSES
-                    ),
-                    None,
-                )
-                cache_window_end = (
-                    next_settlement[0] - 1 if next_settlement is not None else None
-                )
-                cache = _latest_matching(
-                    scoped,
-                    after=failure_index,
-                    before_or_at=cache_window_end,
-                    stage=Stage.RECONCILIATION,
-                    key="admission_cache_status",
-                    reference=verification,
-                    authoritative=True,
-                )
-                cache_status = _status(cache[1].value) if cache else None
-                if cache is None or cache_status not in (
-                    _ACTIVE_CACHE_STATUSES | _SAFE_CACHE_STATUSES
-                ):
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="VERIFICATION_CACHE_STATUS_MISSING",
-                            from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
-                            to_stage=Stage.RECONCILIATION,
-                            severity="medium",
-                            explanation=(
-                                "Settlement failed after verification, but no "
-                                "authoritative recognized cache state shows whether "
-                                "verification-derived admission was revoked."
-                            ),
-                            operation_id=operation_id,
-                            evidence=[
-                                *contract.events,
-                                verification,
-                                failure,
-                                cache[1] if cache else None,
-                            ],
-                        ),
-                    )
-                elif cache_status in _ACTIVE_CACHE_STATUSES:
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="VERIFICATION_CACHE_SURVIVES_SETTLEMENT_FAILURE",
-                            from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
-                            to_stage=Stage.RECONCILIATION,
-                            severity="high",
-                            explanation=(
-                                "Verification-derived admission state remains active "
-                                "after authoritative settlement failure."
-                            ),
-                            operation_id=operation_id,
-                            evidence=[*contract.events, verification, failure, cache[1]],
-                        ),
-                    )
-
                 later_attempts = [
                     (index, event)
                     for index, event in scoped
@@ -456,6 +424,86 @@ def verify_finality_bound_delivery_authority(
                         replays.append((attempt_index, attempt))
                     elif relation == "unresolved" and _is_replay_attempt(attempt):
                         unresolved_replays.append(attempt)
+
+                next_settlement = next(
+                    (
+                        (index, event)
+                        for index, event in terminal_finalities
+                        if index > failure_index
+                        and _status(event.value) in _SETTLED_STATUSES
+                    ),
+                    None,
+                )
+                first_replay_index = replays[0][0] if replays else None
+
+                # Cache invalidation is required only while the failed state can
+                # still authorize reuse. If the same payment becomes settled
+                # before any replay, finality itself closes that unsafe window.
+                settlement_precedes_replay = bool(
+                    next_settlement is not None
+                    and (
+                        first_replay_index is None
+                        or next_settlement[0] < first_replay_index
+                    )
+                )
+                if not settlement_precedes_replay:
+                    cache_boundary = (
+                        first_replay_index - 1
+                        if first_replay_index is not None
+                        else (
+                            next_settlement[0] - 1
+                            if next_settlement is not None
+                            else None
+                        )
+                    )
+                    cache = _recognized_cache_state(
+                        scoped,
+                        after=failure_index,
+                        before_or_at=cache_boundary,
+                        reference=verification,
+                    )
+                    cache_status = _status(cache[1].value) if cache else None
+                    if cache is None:
+                        _append_unique(
+                            findings,
+                            seen,
+                            _finding(
+                                code="VERIFICATION_CACHE_STATUS_MISSING",
+                                from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                                to_stage=Stage.RECONCILIATION,
+                                severity="medium",
+                                explanation=(
+                                    "Settlement failed after verification, but no "
+                                    "authoritative recognized cache state establishes "
+                                    "whether admission was revoked before reuse."
+                                ),
+                                operation_id=operation_id,
+                                evidence=[*contract.events, verification, failure],
+                            ),
+                        )
+                    elif cache_status in _ACTIVE_CACHE_STATUSES:
+                        _append_unique(
+                            findings,
+                            seen,
+                            _finding(
+                                code="VERIFICATION_CACHE_SURVIVES_SETTLEMENT_FAILURE",
+                                from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                                to_stage=Stage.RECONCILIATION,
+                                severity="high",
+                                explanation=(
+                                    "Verification-derived admission state remains "
+                                    "active at the credential-reuse boundary after "
+                                    "authoritative settlement failure."
+                                ),
+                                operation_id=operation_id,
+                                evidence=[
+                                    *contract.events,
+                                    verification,
+                                    failure,
+                                    cache[1],
+                                ],
+                            ),
+                        )
 
                 if unresolved_replays:
                     _append_unique(
@@ -507,7 +555,7 @@ def verify_finality_bound_delivery_authority(
                     # occur before or after the replay, but it must occur after
                     # the failed boundary and no later than delivery. Settlement
                     # observed after delivery cannot retroactively authorize it.
-                    settled_before_delivery = _latest_matching(
+                    finality_before_delivery = _latest_matching(
                         scoped,
                         after=failure_index,
                         before_or_at=delivery_index,
@@ -517,8 +565,8 @@ def verify_finality_bound_delivery_authority(
                         authoritative=True,
                     )
                     has_settlement_authority = bool(
-                        settled_before_delivery
-                        and _status(settled_before_delivery[1].value)
+                        finality_before_delivery
+                        and _status(finality_before_delivery[1].value)
                         in _SETTLED_STATUSES
                     )
 
@@ -637,6 +685,30 @@ def verify_finality_bound_delivery_authority(
                                 ],
                             ),
                         )
+                    elif basis_value not in _SUPPORTED_BASES:
+                        _append_unique(
+                            findings,
+                            seen,
+                            _finding(
+                                code="DELIVERY_AUTHORITY_FINALITY_UNRESOLVED",
+                                from_stage=Stage.POLICY_DECISION,
+                                to_stage=Stage.RESOURCE_OUTCOME_DELIVERY,
+                                severity="high",
+                                explanation=(
+                                    f"Delivery names unsupported authority basis "
+                                    f"{basis_value!r}."
+                                ),
+                                operation_id=operation_id,
+                                evidence=[
+                                    *contract.events,
+                                    verification,
+                                    failure,
+                                    replay,
+                                    basis[1],
+                                    delivery,
+                                ],
+                            ),
+                        )
 
                     if not has_settlement_authority and not has_entitlement_authority:
                         _append_unique(
@@ -661,8 +733,8 @@ def verify_finality_bound_delivery_authority(
                                     replay,
                                     basis[1] if basis else None,
                                     delivery,
-                                    settled_before_delivery[1]
-                                    if settled_before_delivery
+                                    finality_before_delivery[1]
+                                    if finality_before_delivery
                                     else None,
                                 ],
                             ),
