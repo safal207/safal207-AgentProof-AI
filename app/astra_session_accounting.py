@@ -19,17 +19,6 @@ _SUPPORTED_REMAINDER_POLICIES = {
     "not_credited",
 }
 _IDENTITY_FIELDS = ("authorization_id", "payment_id")
-_AMOUNT_KEYS = {
-    "authorized_ceiling_minor",
-    "claimed_session_remaining_minor",
-    "claimed_session_spend_minor",
-    "provider_debit_amount_minor",
-    "session_credit_minor",
-    "session_debit_minor",
-    "session_remaining_after_minor",
-    "session_remaining_before_minor",
-    "settled_amount_minor",
-}
 _SESSION_ACCOUNTING_KEYS = {
     "claimed_session_remaining_minor",
     "claimed_session_spend_minor",
@@ -39,6 +28,10 @@ _SESSION_ACCOUNTING_KEYS = {
     "session_remaining_after_minor",
     "session_remaining_before_minor",
     "session_remainder_reconciliation_status",
+}
+_ACCOUNTING_TRIGGER_KEYS = _SESSION_ACCOUNTING_KEYS | {
+    "authorized_ceiling_minor",
+    "settled_amount_minor",
 }
 _COMPLETE_STATUSES = {"complete", "completed", "reconciled", "success", "succeeded"}
 
@@ -61,6 +54,12 @@ class _Amount:
     asset: str
 
 
+@dataclass(frozen=True)
+class _Selection:
+    record: _Amount | None
+    classified_failure: bool = False
+
+
 def _text(value: Any) -> str | None:
     if isinstance(value, bool) or value is None:
         return None
@@ -73,7 +72,8 @@ def _text(value: Any) -> str | None:
 def _status(value: Any) -> str | None:
     if isinstance(value, Mapping):
         value = value.get("status")
-    return _text(value).lower() if _text(value) is not None else None
+    text = _text(value)
+    return text.lower() if text is not None else None
 
 
 def _asset(value: Any) -> str | None:
@@ -144,6 +144,8 @@ def _identity_profile(events: Iterable[StateEvent]) -> tuple[dict[str, str], boo
 
 
 def _identity_relation(profile: Mapping[str, str], event: StateEvent) -> str:
+    """Compare typed identifiers without crossing identity namespaces."""
+
     if not profile:
         return "unresolved"
     shared = False
@@ -155,6 +157,15 @@ def _identity_relation(profile: Mapping[str, str], event: StateEvent) -> str:
         if observed != expected:
             return "divergent"
     return "matched" if shared else "unresolved"
+
+
+def _identity_fingerprint(event: StateEvent) -> tuple[tuple[str, str], ...] | None:
+    values = tuple(
+        (field, value)
+        for field in _IDENTITY_FIELDS
+        if (value := getattr(event, field)) is not None
+    )
+    return values or None
 
 
 def _finding(
@@ -232,7 +243,7 @@ def _authoritative_events(
     ]
 
 
-def _matching_amounts(
+def _select_amount(
     events: Iterable[StateEvent],
     *,
     key: str,
@@ -244,30 +255,43 @@ def _matching_amounts(
     findings: list[Finding],
     seen: set[tuple[str, str | None]],
     contract: _Contract,
-) -> list[_Amount]:
-    matched: list[_Amount] = []
-    saw_identity = False
-    saw_scope_mismatch = False
-    saw_asset_mismatch = False
-    saw_invalid = False
+    missing_code: str | None = None,
+    missing_explanation: str | None = None,
+) -> _Selection:
+    """Select one authoritative amount and fail closed on conflicting identity.
+
+    Evidence in another session/operation that shares the payment identity is a
+    scope mismatch. Evidence in the same session/operation with a divergent or
+    incomparable typed identity is an accounting ambiguity, not absence. If any
+    classified conflicting record exists, a simultaneously valid record cannot
+    make the boundary clean.
+    """
+
+    valid: list[_Amount] = []
+    classified = False
+    relevant_events: list[StateEvent] = []
 
     for event in _authoritative_events(events, key=key, stages=stages):
         relation = _identity_relation(identity, event)
+        same_scope = (
+            event.session_id == session_id and event.operation_id == operation_id
+        )
+
         if relation == "divergent":
-            continue
-        if relation == "unresolved":
-            if event.session_id == session_id and event.operation_id == operation_id:
+            if same_scope:
+                classified = True
+                relevant_events.append(event)
                 _append_unique(
                     findings,
                     seen,
                     _finding(
-                        code="SESSION_ACCOUNTING_IDENTITY_UNRESOLVED",
+                        code="SESSION_ACCOUNTING_EVIDENCE_CONFLICT",
                         from_stage=Stage.MANDATE_AUTHORIZATION,
-                        to_stage=Stage.RECONCILIATION,
-                        severity="medium",
+                        to_stage=event.stage,
+                        severity="high",
                         explanation=(
-                            f"Accounting evidence {key!r} cannot be tied to the "
-                            "authorized payment through a common typed identity."
+                            f"Authoritative {key!r} evidence in the same session "
+                            "and operation conflicts with the typed payment identity."
                         ),
                         operation_id=operation_id,
                         evidence=[*contract.events, event],
@@ -275,9 +299,31 @@ def _matching_amounts(
                 )
             continue
 
-        saw_identity = True
+        if relation == "unresolved":
+            if same_scope:
+                classified = True
+                relevant_events.append(event)
+                _append_unique(
+                    findings,
+                    seen,
+                    _finding(
+                        code="SESSION_ACCOUNTING_IDENTITY_UNRESOLVED",
+                        from_stage=Stage.MANDATE_AUTHORIZATION,
+                        to_stage=event.stage,
+                        severity="medium",
+                        explanation=(
+                            f"Authoritative {key!r} evidence in the same session "
+                            "and operation exposes no common typed payment identity."
+                        ),
+                        operation_id=operation_id,
+                        evidence=[*contract.events, event],
+                    ),
+                )
+            continue
+
+        relevant_events.append(event)
         if event.session_id != session_id:
-            saw_scope_mismatch = True
+            classified = True
             _append_unique(
                 findings,
                 seen,
@@ -297,7 +343,7 @@ def _matching_amounts(
             )
             continue
         if event.operation_id != operation_id:
-            saw_scope_mismatch = True
+            classified = True
             _append_unique(
                 findings,
                 seen,
@@ -318,7 +364,7 @@ def _matching_amounts(
 
         record = _amount(event)
         if record is None:
-            saw_invalid = True
+            classified = True
             _append_unique(
                 findings,
                 seen,
@@ -337,7 +383,7 @@ def _matching_amounts(
             )
             continue
         if record.asset != asset:
-            saw_asset_mismatch = True
+            classified = True
             _append_unique(
                 findings,
                 seen,
@@ -355,60 +401,115 @@ def _matching_amounts(
                 ),
             )
             continue
-        matched.append(record)
+        valid.append(record)
 
-    if not matched and saw_identity and not (
-        saw_scope_mismatch or saw_asset_mismatch or saw_invalid
-    ):
-        # Identity matched but no usable record survived for an unclassified
-        # reason. Keep the boundary unresolved rather than claiming absence.
+    if classified:
+        return _Selection(record=None, classified_failure=True)
+
+    if valid:
+        amounts = {record.amount for record in valid}
+        if len(amounts) > 1:
+            _append_unique(
+                findings,
+                seen,
+                _finding(
+                    code="SESSION_ACCOUNTING_EVIDENCE_CONFLICT",
+                    from_stage=valid[0].event.stage,
+                    to_stage=Stage.RECONCILIATION,
+                    severity="high",
+                    explanation=(
+                        f"Authoritative {key!r} records disagree: "
+                        f"{sorted(str(amount) for amount in amounts)!r}."
+                    ),
+                    operation_id=operation_id,
+                    evidence=[*contract.events, *(record.event for record in valid)],
+                ),
+            )
+            return _Selection(record=None, classified_failure=True)
+        return _Selection(record=valid[-1])
+
+    if missing_code is not None:
         _append_unique(
             findings,
             seen,
             _finding(
-                code="SESSION_ACCOUNTING_IDENTITY_UNRESOLVED",
+                code=missing_code,
                 from_stage=Stage.MANDATE_AUTHORIZATION,
                 to_stage=Stage.RECONCILIATION,
                 severity="medium",
-                explanation=f"Accounting evidence {key!r} is not usable.",
+                explanation=missing_explanation or f"Required {key!r} evidence is missing.",
                 operation_id=operation_id,
-                evidence=[*contract.events],
+                evidence=[*contract.events, *relevant_events],
             ),
         )
-    return matched
+    return _Selection(record=None)
 
 
-def _single_amount(
-    records: list[_Amount],
+def _select_external_status(
+    events: Iterable[StateEvent],
     *,
-    key: str,
+    session_id: str,
     operation_id: str,
+    identity: Mapping[str, str],
     contract: _Contract,
     findings: list[Finding],
     seen: set[tuple[str, str | None]],
-) -> _Amount | None:
-    if not records:
-        return None
-    amounts = {record.amount for record in records}
-    if len(amounts) > 1:
-        _append_unique(
-            findings,
-            seen,
-            _finding(
-                code="SESSION_ACCOUNTING_EVIDENCE_CONFLICT",
-                from_stage=records[0].event.stage,
-                to_stage=Stage.RECONCILIATION,
-                severity="high",
-                explanation=(
-                    f"Authoritative {key!r} records disagree: "
-                    f"{sorted(str(amount) for amount in amounts)!r}."
-                ),
-                operation_id=operation_id,
-                evidence=[*contract.events, *(record.event for record in records)],
-            ),
+) -> bool:
+    candidates: list[StateEvent] = []
+    classified = False
+    for event in events:
+        if (
+            event.key != "session_remainder_reconciliation_status"
+            or event.stage != Stage.RECONCILIATION
+            or not event.authoritative
+        ):
+            continue
+        relation = _identity_relation(identity, event)
+        same_scope = (
+            event.session_id == session_id and event.operation_id == operation_id
         )
-        return None
-    return records[-1]
+        if relation == "matched" and same_scope:
+            candidates.append(event)
+        elif same_scope:
+            classified = True
+            _append_unique(
+                findings,
+                seen,
+                _finding(
+                    code="SESSION_ACCOUNTING_IDENTITY_UNRESOLVED",
+                    from_stage=Stage.MANDATE_AUTHORIZATION,
+                    to_stage=Stage.RECONCILIATION,
+                    severity="medium",
+                    explanation=(
+                        "External remainder reconciliation cannot be tied to the "
+                        "authorized payment through a stable typed identity."
+                    ),
+                    operation_id=operation_id,
+                    evidence=[*contract.events, event],
+                ),
+            )
+
+    if classified:
+        return False
+    if candidates and _status(candidates[-1].value) in _COMPLETE_STATUSES:
+        return True
+    _append_unique(
+        findings,
+        seen,
+        _finding(
+            code="SESSION_REMAINDER_EVIDENCE_MISSING",
+            from_stage=Stage.RECONCILIATION,
+            to_stage=Stage.RECONCILIATION,
+            severity="medium",
+            explanation=(
+                "The external_reconciliation remainder policy lacks an "
+                "authoritative completed reconciliation status."
+            ),
+            operation_id=operation_id,
+            evidence=[*contract.events, *candidates],
+        ),
+    )
+    return False
 
 
 def _claim_amounts(
@@ -434,6 +535,120 @@ def _claim_amounts(
         if record is not None and record.asset == asset:
             records.append(record)
     return records
+
+
+def _ceiling_groups(
+    events: Iterable[StateEvent],
+    session_id: str,
+) -> dict[str | None, list[StateEvent]]:
+    groups: dict[str | None, list[StateEvent]] = {}
+    for event in _authoritative_events(
+        events,
+        key="authorized_ceiling_minor",
+        stages={Stage.MANDATE_AUTHORIZATION},
+    ):
+        if event.session_id == session_id:
+            groups.setdefault(event.operation_id, []).append(event)
+    return groups
+
+
+def _select_ceiling(
+    events: list[StateEvent],
+    *,
+    operation_id: str,
+    contract: _Contract,
+    findings: list[Finding],
+    seen: set[tuple[str, str | None]],
+) -> tuple[_Amount | None, dict[str, str] | None]:
+    parsed: list[_Amount] = []
+    fingerprints: set[tuple[tuple[str, str], ...]] = set()
+    classified = False
+
+    for event in events:
+        record = _amount(event)
+        fingerprint = _identity_fingerprint(event)
+        if record is None:
+            classified = True
+            _append_unique(
+                findings,
+                seen,
+                _finding(
+                    code="SESSION_ACCOUNTING_AMOUNT_INVALID",
+                    from_stage=Stage.MANDATE_AUTHORIZATION,
+                    to_stage=Stage.RECONCILIATION,
+                    severity="medium",
+                    explanation=(
+                        "Authorized ceiling must carry a non-negative integer "
+                        "amount_minor and a non-empty asset."
+                    ),
+                    operation_id=operation_id,
+                    evidence=[*contract.events, event],
+                ),
+            )
+            continue
+        if fingerprint is None:
+            classified = True
+            _append_unique(
+                findings,
+                seen,
+                _finding(
+                    code="SESSION_ACCOUNTING_IDENTITY_UNRESOLVED",
+                    from_stage=Stage.MANDATE_AUTHORIZATION,
+                    to_stage=Stage.RECONCILIATION,
+                    severity="medium",
+                    explanation=(
+                        "Authorized-ceiling evidence exposes no typed payment identity."
+                    ),
+                    operation_id=operation_id,
+                    evidence=[*contract.events, event],
+                ),
+            )
+            continue
+        parsed.append(record)
+        fingerprints.add(fingerprint)
+
+    if classified:
+        return None, None
+    if not parsed:
+        return None, None
+
+    amounts = {(record.amount, record.asset) for record in parsed}
+    if len(amounts) > 1 or len(fingerprints) > 1:
+        _append_unique(
+            findings,
+            seen,
+            _finding(
+                code="SESSION_ACCOUNTING_EVIDENCE_CONFLICT",
+                from_stage=Stage.MANDATE_AUTHORIZATION,
+                to_stage=Stage.RECONCILIATION,
+                severity="high",
+                explanation=(
+                    "Authoritative ceiling records in one session and operation "
+                    "disagree about amount, asset, or typed payment identity."
+                ),
+                operation_id=operation_id,
+                evidence=[*contract.events, *(record.event for record in parsed)],
+            ),
+        )
+        return None, None
+
+    identity, valid = _identity_profile([record.event for record in parsed])
+    if not valid:
+        _append_unique(
+            findings,
+            seen,
+            _finding(
+                code="SESSION_ACCOUNTING_IDENTITY_UNRESOLVED",
+                from_stage=Stage.MANDATE_AUTHORIZATION,
+                to_stage=Stage.RECONCILIATION,
+                severity="high",
+                explanation="Authoritative ceiling identities conflict.",
+                operation_id=operation_id,
+                evidence=[*contract.events, *(record.event for record in parsed)],
+            ),
+        )
+        return None, None
+    return parsed[-1], identity
 
 
 def verify_payment_session_accounting(
@@ -528,7 +743,7 @@ def verify_payment_session_accounting(
     evidence_sessions = {
         event.session_id
         for event in materialized
-        if event.key in _SESSION_ACCOUNTING_KEYS and event.session_id is not None
+        if event.key in _ACCOUNTING_TRIGGER_KEYS and event.session_id is not None
     }
     global_contract = contracts.get(None)
     for session_id in sorted(evidence_sessions):
@@ -539,7 +754,7 @@ def verify_payment_session_accounting(
                 event
                 for event in materialized
                 if event.session_id == session_id
-                and event.key in _SESSION_ACCOUNTING_KEYS
+                and event.key in _ACCOUNTING_TRIGGER_KEYS
             ]
             _append_unique(
                 findings,
@@ -561,21 +776,11 @@ def verify_payment_session_accounting(
     if None in conflicted_scopes:
         return findings
 
-    ceiling_events = _authoritative_events(
-        materialized,
-        key="authorized_ceiling_minor",
-        stages={Stage.MANDATE_AUTHORIZATION},
-    )
-
     contract_sessions = {
         session_id for session_id in contracts if session_id is not None
     }
     if global_contract is not None:
-        contract_sessions.update(
-            event.session_id
-            for event in ceiling_events
-            if event.session_id is not None
-        )
+        contract_sessions.update(evidence_sessions)
 
     for session_id in sorted(contract_sessions):
         if session_id in conflicted_scopes:
@@ -608,10 +813,8 @@ def verify_payment_session_accounting(
         if contract is None:
             continue
 
-        session_ceilings = [
-            event for event in ceiling_events if event.session_id == session_id
-        ]
-        if not session_ceilings:
+        groups = _ceiling_groups(materialized, session_id)
+        if not groups:
             _append_unique(
                 findings,
                 seen,
@@ -630,8 +833,7 @@ def verify_payment_session_accounting(
             )
             continue
 
-        for ceiling_event in session_ceilings:
-            operation_id = ceiling_event.operation_id
+        for operation_id, ceiling_events in groups.items():
             if operation_id is None:
                 _append_unique(
                     findings,
@@ -646,52 +848,22 @@ def verify_payment_session_accounting(
                             "ledger evidence cannot be scoped safely."
                         ),
                         operation_id=None,
-                        evidence=[*contract.events, ceiling_event],
+                        evidence=[*contract.events, *ceiling_events],
                     ),
                 )
                 continue
 
-            ceiling = _amount(ceiling_event)
-            if ceiling is None:
-                _append_unique(
-                    findings,
-                    seen,
-                    _finding(
-                        code="SESSION_ACCOUNTING_AMOUNT_INVALID",
-                        from_stage=Stage.MANDATE_AUTHORIZATION,
-                        to_stage=Stage.RECONCILIATION,
-                        severity="medium",
-                        explanation=(
-                            "Authorized ceiling must carry a non-negative integer "
-                            "amount_minor and a non-empty asset."
-                        ),
-                        operation_id=operation_id,
-                        evidence=[*contract.events, ceiling_event],
-                    ),
-                )
+            ceiling, identity = _select_ceiling(
+                ceiling_events,
+                operation_id=operation_id,
+                contract=contract,
+                findings=findings,
+                seen=seen,
+            )
+            if ceiling is None or identity is None:
                 continue
 
-            identity, identity_valid = _identity_profile([ceiling_event])
-            if not identity_valid:
-                _append_unique(
-                    findings,
-                    seen,
-                    _finding(
-                        code="SESSION_ACCOUNTING_IDENTITY_UNRESOLVED",
-                        from_stage=Stage.MANDATE_AUTHORIZATION,
-                        to_stage=Stage.RECONCILIATION,
-                        severity="medium",
-                        explanation=(
-                            "Authorized-ceiling evidence exposes no stable typed "
-                            "payment identity."
-                        ),
-                        operation_id=operation_id,
-                        evidence=[*contract.events, ceiling_event],
-                    ),
-                )
-                continue
-
-            settlement_records = _matching_amounts(
+            settlement_selection = _select_amount(
                 materialized,
                 key="settled_amount_minor",
                 stages={Stage.ACTUAL_SETTLEMENT_FINALITY},
@@ -702,39 +874,20 @@ def verify_payment_session_accounting(
                 findings=findings,
                 seen=seen,
                 contract=contract,
+                missing_code="ACTUAL_SETTLEMENT_AMOUNT_EVIDENCE_MISSING",
+                missing_explanation=(
+                    "No authoritative settlement amount can be tied to the "
+                    "authorized payment."
+                ),
             )
-            settlement = _single_amount(
-                settlement_records,
-                key="settled_amount_minor",
-                operation_id=operation_id,
-                contract=contract,
-                findings=findings,
-                seen=seen,
-            )
+            settlement = settlement_selection.record
             if settlement is None:
-                if not settlement_records:
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="ACTUAL_SETTLEMENT_AMOUNT_EVIDENCE_MISSING",
-                            from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
-                            to_stage=Stage.RECONCILIATION,
-                            severity="medium",
-                            explanation=(
-                                "No authoritative settlement amount can be tied "
-                                "to the authorized payment."
-                            ),
-                            operation_id=operation_id,
-                            evidence=[*contract.events, ceiling_event],
-                        ),
-                    )
                 continue
 
-            combined_identity, combined_valid = _identity_profile(
-                [ceiling_event, settlement.event]
+            combined_identity, valid_identity = _identity_profile(
+                [ceiling.event, settlement.event]
             )
-            if not combined_valid:
+            if not valid_identity:
                 _append_unique(
                     findings,
                     seen,
@@ -748,12 +901,12 @@ def verify_payment_session_accounting(
                             "typed payment identities."
                         ),
                         operation_id=operation_id,
-                        evidence=[*contract.events, ceiling_event, settlement.event],
+                        evidence=[*contract.events, ceiling.event, settlement.event],
                     ),
                 )
                 continue
 
-            debit_records = _matching_amounts(
+            debit_selection = _select_amount(
                 materialized,
                 key="session_debit_minor",
                 stages={Stage.POLICY_DECISION, Stage.PAYMENT_ATTEMPT, Stage.RECONCILIATION},
@@ -764,43 +917,20 @@ def verify_payment_session_accounting(
                 findings=findings,
                 seen=seen,
                 contract=contract,
+                missing_code="SESSION_DEBIT_EVIDENCE_MISSING",
+                missing_explanation=(
+                    "No authoritative session-debit amount can be tied to the "
+                    "settled payment."
+                ),
             )
-            debit = _single_amount(
-                debit_records,
-                key="session_debit_minor",
-                operation_id=operation_id,
-                contract=contract,
-                findings=findings,
-                seen=seen,
-            )
+            debit = debit_selection.record
             if debit is None:
-                if not debit_records:
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="SESSION_DEBIT_EVIDENCE_MISSING",
-                            from_stage=Stage.POLICY_DECISION,
-                            to_stage=Stage.RECONCILIATION,
-                            severity="medium",
-                            explanation=(
-                                "No authoritative session-debit amount can be tied "
-                                "to the settled payment."
-                            ),
-                            operation_id=operation_id,
-                            evidence=[
-                                *contract.events,
-                                ceiling_event,
-                                settlement.event,
-                            ],
-                        ),
-                    )
                 continue
 
-            accounting_identity, accounting_valid = _identity_profile(
-                [ceiling_event, settlement.event, debit.event]
+            accounting_identity, valid_accounting_identity = _identity_profile(
+                [ceiling.event, settlement.event, debit.event]
             )
-            if not accounting_valid:
+            if not valid_accounting_identity:
                 _append_unique(
                     findings,
                     seen,
@@ -816,7 +946,7 @@ def verify_payment_session_accounting(
                         operation_id=operation_id,
                         evidence=[
                             *contract.events,
-                            ceiling_event,
+                            ceiling.event,
                             settlement.event,
                             debit.event,
                         ],
@@ -838,7 +968,7 @@ def verify_payment_session_accounting(
                             f"ceiling {ceiling.amount}."
                         ),
                         operation_id=operation_id,
-                        evidence=[*contract.events, ceiling_event, settlement.event],
+                        evidence=[*contract.events, ceiling.event, settlement.event],
                     ),
                 )
             if debit.amount > ceiling.amount:
@@ -855,13 +985,13 @@ def verify_payment_session_accounting(
                             f"ceiling {ceiling.amount}."
                         ),
                         operation_id=operation_id,
-                        evidence=[*contract.events, ceiling_event, debit.event],
+                        evidence=[*contract.events, ceiling.event, debit.event],
                     ),
                 )
 
-            provider_amount: _Amount | None = None
+            provider: _Amount | None = None
             if contract.debit_basis == "explicit_provider_amount":
-                provider_records = _matching_amounts(
+                provider_selection = _select_amount(
                     materialized,
                     key="provider_debit_amount_minor",
                     stages={Stage.POLICY_DECISION, Stage.PAYMENT_ATTEMPT, Stage.RECONCILIATION},
@@ -872,39 +1002,18 @@ def verify_payment_session_accounting(
                     findings=findings,
                     seen=seen,
                     contract=contract,
+                    missing_code="EXPLICIT_PROVIDER_AMOUNT_EVIDENCE_MISSING",
+                    missing_explanation=(
+                        "The explicit_provider_amount debit basis lacks an "
+                        "authoritative provider amount."
+                    ),
                 )
-                provider_amount = _single_amount(
-                    provider_records,
-                    key="provider_debit_amount_minor",
-                    operation_id=operation_id,
-                    contract=contract,
-                    findings=findings,
-                    seen=seen,
-                )
-                if provider_amount is None:
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="EXPLICIT_PROVIDER_AMOUNT_EVIDENCE_MISSING",
-                            from_stage=Stage.POLICY_DECISION,
-                            to_stage=Stage.RECONCILIATION,
-                            severity="medium",
-                            explanation=(
-                                "The accounting contract uses explicit_provider_amount "
-                                "but no authoritative provider amount is available."
-                            ),
-                            operation_id=operation_id,
-                            evidence=[*contract.events, debit.event],
-                        ),
-                    )
+                provider = provider_selection.record
 
             expected_debit = {
                 "authorized_ceiling": ceiling.amount,
                 "actual_settlement": settlement.amount,
-                "explicit_provider_amount": provider_amount.amount
-                if provider_amount is not None
-                else None,
+                "explicit_provider_amount": provider.amount if provider else None,
             }[contract.debit_basis]
             if expected_debit is not None and debit.amount != expected_debit:
                 _append_unique(
@@ -923,15 +1032,20 @@ def verify_payment_session_accounting(
                         operation_id=operation_id,
                         evidence=[
                             *contract.events,
-                            ceiling_event,
+                            ceiling.event,
                             settlement.event,
                             debit.event,
-                            provider_amount.event if provider_amount else None,
+                            provider.event if provider else None,
                         ],
                     ),
                 )
 
-            credit_records = _matching_amounts(
+            credit_missing_code = (
+                None
+                if contract.remainder_policy == "external_reconciliation"
+                else "SESSION_REMAINDER_EVIDENCE_MISSING"
+            )
+            credit_selection = _select_amount(
                 materialized,
                 key="session_credit_minor",
                 stages={Stage.RECONCILIATION},
@@ -942,15 +1056,13 @@ def verify_payment_session_accounting(
                 findings=findings,
                 seen=seen,
                 contract=contract,
+                missing_code=credit_missing_code,
+                missing_explanation=(
+                    f"Contract remainder_policy={contract.remainder_policy!r} "
+                    "requires authoritative session-credit evidence."
+                ),
             )
-            credit = _single_amount(
-                credit_records,
-                key="session_credit_minor",
-                operation_id=operation_id,
-                contract=contract,
-                findings=findings,
-                seen=seen,
-            )
+            credit = credit_selection.record
 
             expected_credit: Decimal | None
             if contract.remainder_policy == "not_credited":
@@ -959,75 +1071,43 @@ def verify_payment_session_accounting(
                 expected_credit = max(debit.amount - settlement.amount, Decimal(0))
             else:
                 expected_credit = None
-                statuses = [
-                    event
-                    for event in materialized
-                    if event.key == "session_remainder_reconciliation_status"
-                    and event.stage == Stage.RECONCILIATION
-                    and event.authoritative
-                    and event.session_id == session_id
-                    and event.operation_id == operation_id
-                    and _identity_relation(accounting_identity, event) == "matched"
-                ]
-                if not statuses or _status(statuses[-1].value) not in _COMPLETE_STATUSES:
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="SESSION_REMAINDER_EVIDENCE_MISSING",
-                            from_stage=Stage.RECONCILIATION,
-                            to_stage=Stage.RECONCILIATION,
-                            severity="medium",
-                            explanation=(
-                                "The external_reconciliation remainder policy lacks "
-                                "an authoritative completed reconciliation status."
-                            ),
-                            operation_id=operation_id,
-                            evidence=[*contract.events, debit.event],
-                        ),
-                    )
+                _select_external_status(
+                    materialized,
+                    session_id=session_id,
+                    operation_id=operation_id,
+                    identity=accounting_identity,
+                    contract=contract,
+                    findings=findings,
+                    seen=seen,
+                )
 
-            if expected_credit is not None:
-                if credit is None:
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="SESSION_REMAINDER_EVIDENCE_MISSING",
-                            from_stage=Stage.RECONCILIATION,
-                            to_stage=Stage.RECONCILIATION,
-                            severity="medium",
-                            explanation=(
-                                f"Contract remainder_policy={contract.remainder_policy!r} "
-                                "requires authoritative session-credit evidence."
-                            ),
-                            operation_id=operation_id,
-                            evidence=[*contract.events, debit.event],
+            if (
+                expected_credit is not None
+                and credit is not None
+                and credit.amount != expected_credit
+            ):
+                _append_unique(
+                    findings,
+                    seen,
+                    _finding(
+                        code="SESSION_REMAINDER_POLICY_MISMATCH",
+                        from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                        to_stage=Stage.RECONCILIATION,
+                        severity="high",
+                        explanation=(
+                            f"Remainder policy expects session credit "
+                            f"{expected_credit}; authoritative credit is "
+                            f"{credit.amount}."
                         ),
-                    )
-                elif credit.amount != expected_credit:
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="SESSION_REMAINDER_POLICY_MISMATCH",
-                            from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
-                            to_stage=Stage.RECONCILIATION,
-                            severity="high",
-                            explanation=(
-                                f"Remainder policy expects session credit "
-                                f"{expected_credit}; authoritative credit is "
-                                f"{credit.amount}."
-                            ),
-                            operation_id=operation_id,
-                            evidence=[
-                                *contract.events,
-                                settlement.event,
-                                debit.event,
-                                credit.event,
-                            ],
-                        ),
-                    )
+                        operation_id=operation_id,
+                        evidence=[
+                            *contract.events,
+                            settlement.event,
+                            debit.event,
+                            credit.event,
+                        ],
+                    ),
+                )
 
             effective_credit = credit.amount if credit is not None else None
             net_session_spend = (
@@ -1036,7 +1116,7 @@ def verify_payment_session_accounting(
                 else None
             )
 
-            before_records = _matching_amounts(
+            before_selection = _select_amount(
                 materialized,
                 key="session_remaining_before_minor",
                 stages={Stage.POLICY_DECISION, Stage.PAYMENT_ATTEMPT, Stage.RECONCILIATION},
@@ -1048,7 +1128,7 @@ def verify_payment_session_accounting(
                 seen=seen,
                 contract=contract,
             )
-            after_records = _matching_amounts(
+            after_selection = _select_amount(
                 materialized,
                 key="session_remaining_after_minor",
                 stages={Stage.RECONCILIATION},
@@ -1060,24 +1140,16 @@ def verify_payment_session_accounting(
                 seen=seen,
                 contract=contract,
             )
-            before = _single_amount(
-                before_records,
-                key="session_remaining_before_minor",
-                operation_id=operation_id,
-                contract=contract,
-                findings=findings,
-                seen=seen,
-            )
-            after = _single_amount(
-                after_records,
-                key="session_remaining_after_minor",
-                operation_id=operation_id,
-                contract=contract,
-                findings=findings,
-                seen=seen,
-            )
+            before = before_selection.record
+            after = after_selection.record
 
-            if (before is None) != (after is None):
+            if (
+                (before is None) != (after is None)
+                and not (
+                    before_selection.classified_failure
+                    or after_selection.classified_failure
+                )
+            ):
                 _append_unique(
                     findings,
                     seen,
@@ -1098,7 +1170,11 @@ def verify_payment_session_accounting(
                         ],
                     ),
                 )
-            elif before is not None and after is not None and effective_credit is not None:
+            elif (
+                before is not None
+                and after is not None
+                and effective_credit is not None
+            ):
                 expected_after = before.amount - debit.amount + effective_credit
                 if expected_after < 0 or after.amount != expected_after:
                     _append_unique(
