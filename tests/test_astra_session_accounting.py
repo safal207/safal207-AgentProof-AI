@@ -262,10 +262,10 @@ def test_wrong_asset_is_not_promoted_into_session_truth():
             settled_amount(asset="EURC"),
         ]
     )
-    assert "SESSION_ACCOUNTING_ASSET_MISMATCH" in found
+    assert found == {"SESSION_ACCOUNTING_ASSET_MISMATCH"}
 
 
-def test_wrong_session_and_operation_are_detected():
+def test_wrong_session_and_operation_are_detected_without_generic_missing():
     wrong_session = codes(
         [
             contract(),
@@ -273,7 +273,7 @@ def test_wrong_session_and_operation_are_detected():
             settled_amount(session_id="session-b"),
         ]
     )
-    assert "SESSION_ACCOUNTING_SESSION_MISMATCH" in wrong_session
+    assert wrong_session == {"SESSION_ACCOUNTING_SESSION_MISMATCH"}
 
     wrong_operation = codes(
         [
@@ -282,18 +282,32 @@ def test_wrong_session_and_operation_are_detected():
             settled_amount(operation_id="op-2"),
         ]
     )
-    assert "SESSION_ACCOUNTING_OPERATION_MISMATCH" in wrong_operation
+    assert wrong_operation == {"SESSION_ACCOUNTING_OPERATION_MISMATCH"}
 
 
-def test_missing_common_typed_identity_stays_unresolved():
-    settlement_without_shared_identity = settled_amount(
+def test_divergent_only_authoritative_identity_fails_closed():
+    divergent = settled_amount(
         authorization_id="auth-2",
-        payment_id=None,
+        payment_id="payment-2",
     )
-    found = codes([contract(), ceiling(), settlement_without_shared_identity])
-    assert "SESSION_ACCOUNTING_IDENTITY_UNRESOLVED" in found or (
-        "ACTUAL_SETTLEMENT_AMOUNT_EVIDENCE_MISSING" in found
-    )
+    assert codes([contract(), ceiling(), divergent]) == {
+        "SESSION_ACCOUNTING_EVIDENCE_CONFLICT"
+    }
+
+
+def test_matched_and_divergent_authoritative_records_cannot_verify():
+    assert codes(
+        [
+            contract(),
+            ceiling(),
+            settled_amount(3003),
+            settled_amount(
+                3003,
+                authorization_id="auth-2",
+                payment_id="payment-2",
+            ),
+        ]
+    ) == {"SESSION_ACCOUNTING_EVIDENCE_CONFLICT"}
 
 
 def test_authoritative_amount_conflict_fails_closed():
@@ -303,6 +317,17 @@ def test_authoritative_amount_conflict_fails_closed():
             ceiling(),
             settled_amount(3003),
             settled_amount(3004),
+        ]
+    )
+    assert found == {"SESSION_ACCOUNTING_EVIDENCE_CONFLICT"}
+
+
+def test_conflicting_ceiling_identity_fails_closed():
+    found = codes(
+        [
+            contract(),
+            ceiling(),
+            ceiling(authorization_id="auth-2", payment_id="payment-2"),
         ]
     )
     assert found == {"SESSION_ACCOUNTING_EVIDENCE_CONFLICT"}
@@ -358,7 +383,7 @@ def test_explicit_provider_amount_requires_and_controls_debit():
         debit(3200),
         credit(),
     ]
-    assert "EXPLICIT_PROVIDER_AMOUNT_EVIDENCE_MISSING" in codes(missing)
+    assert codes(missing) == {"EXPLICIT_PROVIDER_AMOUNT_EVIDENCE_MISSING"}
 
 
 def test_debit_basis_mismatch_is_high_severity():
