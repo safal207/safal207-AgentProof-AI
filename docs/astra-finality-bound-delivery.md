@@ -71,6 +71,11 @@ An adapter declares:
 delivery may use a separate entitlement only if an authoritative
 `non_payment_entitlement_status` event is present before delivery.
 
+The entitlement option is a policy relaxation. Duplicate valid declarations at
+the same operation scope are therefore combined strictly: non-payment entitlement
+is allowed only when **every** declaration explicitly permits it. A later
+permissive declaration cannot weaken an earlier strict contract.
+
 ## Evidence vocabulary
 
 ### Verification
@@ -109,6 +114,7 @@ authority.
   "stage": "RECONCILIATION",
   "key": "admission_cache_status",
   "value": "revoked",
+  "authoritative": true,
   "authorization_id": "authorization-1"
 }
 ```
@@ -116,6 +122,12 @@ authority.
 Safe terminal states include `revoked`, `invalidated`, `expired`, `consumed`,
 and `absent`. Unsafe reusable states include `active`, `available`, `cached`,
 `verified`, and `replayable`.
+
+Cache evidence must be authoritative. An application claim that a cache was
+revoked cannot close the economic boundary by itself. The relevant state is the
+last recognized authoritative state **before the first same-credential reuse**.
+A revocation recorded only after replay or delivery cannot erase an earlier
+active state at the decision point.
 
 ### Delivery authority basis
 
@@ -137,6 +149,8 @@ Supported bases:
 - `non_payment_entitlement` — requires the contract opt-in and independent
   authoritative entitlement evidence.
 
+An unknown basis is unresolved rather than implicitly trusted.
+
 ### Response provenance
 
 A `response_provenance_status=verified` receipt may prove that the returned
@@ -154,20 +168,40 @@ identity itself is absent from both compared events.
 A later attempt with a fresh authorization is not labelled a replay of the
 failed credential. It must be verified and settled under its own evidence.
 
+## Chronology and authority precedence
+
+The verifier evaluates each authoritative failed-finality boundary in trace
+order. Evidence cannot authorize an earlier decision retroactively:
+
+```text
+failed settlement
+-> replay
+-> delivery
+-> later settlement
+```
+
+The later settlement may explain eventual economic state, but it does not make
+the earlier delivery authorized at the moment it occurred. A matching settlement
+must exist after the failed boundary and no later than delivery.
+
+A matching settlement observed before any replay closes the unsafe failed-state
+window even if a separate cache-status event is absent. Otherwise the cache must
+be proven safe before credential reuse.
+
 ## Findings
 
 | Code | Meaning |
 |---|---|
 | `FINALITY_BOUND_DELIVERY_CONTRACT_INVALID` | The contract does not explicitly separate verification from delivery authority. |
 | `PAYMENT_VERIFICATION_EVIDENCE_MISSING` | The required successful verification event is absent. |
-| `SETTLEMENT_FINALITY_EVIDENCE_MISSING` | Verification exists but no matching authoritative finality can be resolved. |
-| `VERIFICATION_CACHE_STATUS_MISSING` | Settlement failed but cache invalidation evidence is absent. |
-| `VERIFICATION_CACHE_SURVIVES_SETTLEMENT_FAILURE` | Reusable verification-derived state remains active after failure. |
+| `SETTLEMENT_FINALITY_EVIDENCE_MISSING` | Verification exists but no matching authoritative terminal finality can be resolved. |
+| `VERIFICATION_CACHE_STATUS_MISSING` | Failed settlement remains reusable because authoritative recognized cache state is absent before reuse. |
+| `VERIFICATION_CACHE_SURVIVES_SETTLEMENT_FAILURE` | Reusable verification-derived state remains active at the credential-reuse boundary. |
 | `DELIVERY_AUTHORITY_BASIS_MISSING` | A replay produced delivery without declaring what authorized release. |
-| `DELIVERY_AUTHORITY_FINALITY_UNRESOLVED` | The declared settlement or entitlement basis is unsupported by authoritative evidence. |
+| `DELIVERY_AUTHORITY_FINALITY_UNRESOLVED` | The declared settlement or entitlement basis is unsupported by authoritative evidence existing at delivery time. |
 | `VERIFICATION_USED_AS_DELIVERY_AUTHORITY` | The merchant explicitly released the result from verification-cache authority. |
 | `REPLAY_PAYMENT_IDENTITY_UNRESOLVED` | A replay-like attempt is visible, but reuse of the failed credential cannot be proven. |
-| `REPLAY_DELIVERY_AFTER_FAILED_SETTLEMENT` | The same credential produced delivery after settlement failure without later finality or separate entitlement. |
+| `REPLAY_DELIVERY_AFTER_FAILED_SETTLEMENT` | The same credential produced delivery after settlement failure without finality or separate entitlement existing at delivery time. |
 
 The generic Astra core may additionally report `DELIVERED_BUT_NOT_SETTLED`.
 That finding states the economic outcome. The specialized findings explain the
@@ -182,7 +216,7 @@ admission mechanism that allowed it.
 ```text
 verification succeeds
 settlement fails
-cache remains replayable
+authoritative cache state remains replayable
 same nonce replays
 response hash is valid
 delivery authority = verification cache
@@ -205,7 +239,7 @@ or payer loss is claimed because the trace contains no successful settlement.
 ```text
 first credential verifies
 first settlement fails
-cache is revoked
+cache is revoked before reuse
 same-credential replay is denied
 fresh credential verifies and settles
 one receipt and one response are delivered
@@ -226,6 +260,10 @@ SETTLEMENT_FINALITY_EVIDENCE_MISSING
 UNRESOLVED
 ```
 
+Additional unit regressions cover late settlement, late cache revocation,
+settlement-before-replay, strict duplicate contracts, non-authoritative cache
+claims, fresh authorization, and independent entitlement.
+
 ## Claim boundary
 
 The public x402toll report establishes one live defect class and its regression
@@ -243,7 +281,7 @@ final paid entitlement
 
 The stronger replay-delivery finding requires the same typed payment identity,
 authoritative failed finality, a later delivery, and no matching settlement or
-separate entitlement before that delivery.
+separate entitlement existing before that delivery.
 
 ## Commercial boundary
 
