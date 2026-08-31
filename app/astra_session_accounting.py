@@ -740,13 +740,22 @@ def verify_payment_session_accounting(
                 remainder_policy=remainder_policy,
             )
 
-    evidence_sessions = {
+    # Only session-ledger or application-accounting evidence creates a new
+    # session-level contract obligation. A settlement/ceiling event in another
+    # session that shares a payment identity is classified against the intended
+    # session instead of also being called a new session with a missing contract.
+    accounting_evidence_sessions = {
+        event.session_id
+        for event in materialized
+        if event.key in _SESSION_ACCOUNTING_KEYS and event.session_id is not None
+    }
+    all_evidence_sessions = {
         event.session_id
         for event in materialized
         if event.key in _ACCOUNTING_TRIGGER_KEYS and event.session_id is not None
     }
     global_contract = contracts.get(None)
-    for session_id in sorted(evidence_sessions):
+    for session_id in sorted(accounting_evidence_sessions):
         if session_id in conflicted_scopes:
             continue
         if session_id not in contracts and global_contract is None:
@@ -754,7 +763,7 @@ def verify_payment_session_accounting(
                 event
                 for event in materialized
                 if event.session_id == session_id
-                and event.key in _ACCOUNTING_TRIGGER_KEYS
+                and event.key in _SESSION_ACCOUNTING_KEYS
             ]
             _append_unique(
                 findings,
@@ -780,7 +789,7 @@ def verify_payment_session_accounting(
         session_id for session_id in contracts if session_id is not None
     }
     if global_contract is not None:
-        contract_sessions.update(evidence_sessions)
+        contract_sessions.update(all_evidence_sessions)
 
     for session_id in sorted(contract_sessions):
         if session_id in conflicted_scopes:
