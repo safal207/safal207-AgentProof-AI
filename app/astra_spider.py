@@ -5,6 +5,7 @@ from dataclasses import replace
 
 from .astra_attribution import verify_settlement_attribution_outcome
 from .astra_commitment import verify_terminal_commitment_outcome
+from .astra_delivery_authority import verify_finality_bound_delivery_authority
 from .astra_fulfillment import verify_provider_fulfillment_outcome
 from .astra_multileg import verify_multileg_causal_outcome
 from .astra_origin import verify_payment_credential_origin
@@ -82,6 +83,7 @@ def verify_causal_economic_outcome(
         *verify_indeterminate_retry_outcome(materialized),
         *verify_payment_credential_origin(materialized),
         *verify_payment_session_principal_binding(materialized),
+        *verify_finality_bound_delivery_authority(materialized),
         *verify_settlement_attribution_outcome(materialized),
         *verify_provider_fulfillment_outcome(materialized),
     ]
@@ -93,6 +95,7 @@ __all__ = [
     "Stage",
     "StateEvent",
     "verify_causal_economic_outcome",
+    "verify_finality_bound_delivery_authority",
     "verify_indeterminate_retry_outcome",
     "verify_multileg_causal_outcome",
     "verify_payment_credential_origin",
