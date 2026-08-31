@@ -1,0 +1,116 @@
+{
+  "trace_id": "astra-session-accounting-over-ceiling-red-001",
+  "protocol": "generic-session-ledger/actual-settlement",
+  "scenario": "The buyer authorizes a 3303 atomic USDC ceiling, but independent settlement and the session ledger both record 3400.",
+  "expected_codes": [
+    "SESSION_DEBIT_EXCEEDS_AUTHORIZED_CEILING",
+    "SETTLEMENT_EXCEEDS_AUTHORIZED_CEILING"
+  ],
+  "expected_verdict": "DIVERGED",
+  "events": [
+    {
+      "stage": "POLICY DECISION",
+      "key": "payment_session_accounting_contract",
+      "value": {
+        "required": true,
+        "debit_basis": "actual_settlement",
+        "remainder_policy": "not_credited"
+      },
+      "source": "session-accounting-contract",
+      "session_id": "session-over-ceiling"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "authorized_ceiling_minor",
+      "value": {
+        "amount_minor": "3303",
+        "asset": "USDC"
+      },
+      "source": "signed-authorization",
+      "authoritative": true,
+      "session_id": "session-over-ceiling",
+      "operation_id": "operation-over-ceiling",
+      "authorization_id": "auth-over-ceiling",
+      "payment_id": "payment-over-ceiling"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-finality",
+      "authoritative": true,
+      "session_id": "session-over-ceiling",
+      "operation_id": "operation-over-ceiling",
+      "authorization_id": "auth-over-ceiling",
+      "payment_id": "payment-over-ceiling"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "settled_amount_minor",
+      "value": {
+        "amount_minor": "3400",
+        "asset": "USDC"
+      },
+      "source": "independent-finality",
+      "authoritative": true,
+      "session_id": "session-over-ceiling",
+      "operation_id": "operation-over-ceiling",
+      "authorization_id": "auth-over-ceiling",
+      "payment_id": "payment-over-ceiling"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "session_debit_minor",
+      "value": {
+        "amount_minor": "3400",
+        "asset": "USDC"
+      },
+      "source": "session-ledger",
+      "authoritative": true,
+      "session_id": "session-over-ceiling",
+      "operation_id": "operation-over-ceiling",
+      "authorization_id": "auth-over-ceiling",
+      "payment_id": "payment-over-ceiling"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "session_credit_minor",
+      "value": {
+        "amount_minor": "0",
+        "asset": "USDC"
+      },
+      "source": "session-ledger",
+      "authoritative": true,
+      "session_id": "session-over-ceiling",
+      "operation_id": "operation-over-ceiling",
+      "authorization_id": "auth-over-ceiling",
+      "payment_id": "payment-over-ceiling"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "merchant-payment-receipt",
+      "session_id": "session-over-ceiling",
+      "operation_id": "operation-over-ceiling",
+      "payment_id": "payment-over-ceiling"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "merchant-resource",
+      "session_id": "session-over-ceiling",
+      "operation_id": "operation-over-ceiling"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "complete",
+      "source": "operation-ledger",
+      "authoritative": true,
+      "session_id": "session-over-ceiling",
+      "operation_id": "operation-over-ceiling"
+    }
+  ]
+}
