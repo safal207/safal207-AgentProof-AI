@@ -57,8 +57,12 @@ _REPLAY_MARKERS = {"replay", "replayed", "retry", "same_authorization_replay"}
 
 @dataclass(frozen=True)
 class _Contract:
-    event: StateEvent
+    events: tuple[StateEvent, ...]
     allow_non_payment_entitlement: bool
+
+    @property
+    def event(self) -> StateEvent:
+        return self.events[-1]
 
 
 def _contract(value: Any) -> tuple[bool, bool, bool]:
@@ -181,7 +185,7 @@ def _append_unique(
     findings.append(finding)
 
 
-def _latest_matching(
+def _matching(
     events: list[tuple[int, StateEvent]],
     *,
     after: int,
@@ -190,7 +194,7 @@ def _latest_matching(
     key: str,
     reference: StateEvent,
     authoritative: bool | None = None,
-) -> tuple[int, StateEvent] | None:
+) -> list[tuple[int, StateEvent]]:
     matched: list[tuple[int, StateEvent]] = []
     for index, event in events:
         if index <= after or (before_or_at is not None and index > before_or_at):
@@ -202,6 +206,14 @@ def _latest_matching(
         if _identity_relation(reference, event) != "matched":
             continue
         matched.append((index, event))
+    return matched
+
+
+def _latest_matching(
+    events: list[tuple[int, StateEvent]],
+    **kwargs: Any,
+) -> tuple[int, StateEvent] | None:
+    matched = _matching(events, **kwargs)
     return matched[-1] if matched else None
 
 
@@ -234,16 +246,18 @@ def verify_finality_bound_delivery_authority(
     verification-derived cache state, response provenance, and delivery. A
     valid response hash is intentionally ignored as payment evidence.
 
-    Replay delivery is claimed only when the same typed payment identity is
-    observed after authoritative settlement failure and no later settlement or
-    independently authorized non-payment entitlement supports the delivery.
+    Every authoritative failed-finality boundary is evaluated in trace order.
+    A settlement observed only after delivery cannot retroactively authorize
+    that earlier delivery. Replay delivery is claimed only when the same typed
+    payment identity is observed after failure and no matching settlement or
+    independently authorized non-payment entitlement precedes delivery.
     """
 
     indexed = list(enumerate(events))
     findings: list[Finding] = []
     seen: set[tuple[str, str | None]] = set()
 
-    declarations: dict[str | None, _Contract] = {}
+    declaration_groups: dict[str | None, list[tuple[StateEvent, bool]]] = {}
     for _, event in indexed:
         if event.stage not in {
             Stage.QUOTE_CHALLENGE,
@@ -274,7 +288,20 @@ def verify_finality_bound_delivery_authority(
                 ),
             )
             continue
-        declarations[event.operation_id] = _Contract(event, allow_entitlement)
+        declaration_groups.setdefault(event.operation_id, []).append(
+            (event, allow_entitlement)
+        )
+
+    declarations = {
+        operation_id: _Contract(
+            events=tuple(event for event, _ in group),
+            # Entitlement is a policy relaxation. It is enabled only when every
+            # valid declaration at the same scope explicitly permits it, so a
+            # later declaration cannot weaken an earlier strict contract.
+            allow_non_payment_entitlement=all(allow for _, allow in group),
+        )
+        for operation_id, group in declaration_groups.items()
+    }
 
     for operation_id, contract in declarations.items():
         scoped = _scope(indexed, operation_id)
@@ -300,22 +327,27 @@ def verify_finality_bound_delivery_authority(
                         "the trace contains no successful payment-verification event."
                     ),
                     operation_id=operation_id,
-                    evidence=[contract.event],
+                    evidence=[*contract.events],
                 ),
             )
             continue
 
         for verification_index, verification in verifications:
-            finalities = [
+            finalities = _matching(
+                scoped,
+                after=verification_index,
+                stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                key="payment_status",
+                reference=verification,
+                authoritative=True,
+            )
+            terminal_finalities = [
                 (index, event)
-                for index, event in scoped
-                if index > verification_index
-                and event.stage == Stage.ACTUAL_SETTLEMENT_FINALITY
-                and event.key == "payment_status"
-                and event.authoritative
-                and _identity_relation(verification, event) == "matched"
+                for index, event in finalities
+                if _status(event.value)
+                in (_FAILED_FINALITY_STATUSES | _SETTLED_STATUSES)
             ]
-            if not finalities:
+            if not terminal_finalities:
                 _append_unique(
                     findings,
                     seen,
@@ -326,285 +358,315 @@ def verify_finality_bound_delivery_authority(
                         severity="medium",
                         explanation=(
                             "Payment verification succeeded, but no authoritative "
-                            "finality event can be bound to the same payment identity."
-                        ),
-                        operation_id=operation_id,
-                        evidence=[contract.event, verification],
-                    ),
-                )
-                continue
-
-            finality_index, finality = finalities[-1]
-            finality_status = _status(finality.value)
-            if finality_status in _SETTLED_STATUSES:
-                continue
-            if finality_status not in _FAILED_FINALITY_STATUSES:
-                _append_unique(
-                    findings,
-                    seen,
-                    _finding(
-                        code="SETTLEMENT_FINALITY_EVIDENCE_MISSING",
-                        from_stage=Stage.CLAIMED_RESULT,
-                        to_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
-                        severity="medium",
-                        explanation=(
-                            f"Finality remains {finality.value!r}; terminal "
-                            "settlement authority is unresolved."
-                        ),
-                        operation_id=operation_id,
-                        evidence=[contract.event, verification, finality],
-                    ),
-                )
-                continue
-
-            cache = _latest_matching(
-                scoped,
-                after=finality_index,
-                stage=Stage.RECONCILIATION,
-                key="admission_cache_status",
-                reference=verification,
-            )
-            if cache is None:
-                _append_unique(
-                    findings,
-                    seen,
-                    _finding(
-                        code="VERIFICATION_CACHE_STATUS_MISSING",
-                        from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
-                        to_stage=Stage.RECONCILIATION,
-                        severity="medium",
-                        explanation=(
-                            "Settlement failed after verification, but the trace "
-                            "does not show whether verification-derived admission "
-                            "state was revoked."
-                        ),
-                        operation_id=operation_id,
-                        evidence=[contract.event, verification, finality],
-                    ),
-                )
-            elif _status(cache[1].value) in _ACTIVE_CACHE_STATUSES:
-                _append_unique(
-                    findings,
-                    seen,
-                    _finding(
-                        code="VERIFICATION_CACHE_SURVIVES_SETTLEMENT_FAILURE",
-                        from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
-                        to_stage=Stage.RECONCILIATION,
-                        severity="high",
-                        explanation=(
-                            "Verification-derived admission state remains active "
-                            "after authoritative settlement failure."
-                        ),
-                        operation_id=operation_id,
-                        evidence=[contract.event, verification, finality, cache[1]],
-                    ),
-                )
-
-            later_attempts = [
-                (index, event)
-                for index, event in scoped
-                if index > finality_index
-                and event.stage == Stage.PAYMENT_ATTEMPT
-                and event.key == "attempt"
-            ]
-            replays: list[tuple[int, StateEvent]] = []
-            unresolved_replays: list[StateEvent] = []
-            for attempt_index, attempt in later_attempts:
-                relation = _identity_relation(verification, attempt)
-                if relation == "matched":
-                    replays.append((attempt_index, attempt))
-                elif relation == "unresolved" and _is_replay_attempt(attempt):
-                    unresolved_replays.append(attempt)
-
-            if unresolved_replays:
-                _append_unique(
-                    findings,
-                    seen,
-                    _finding(
-                        code="REPLAY_PAYMENT_IDENTITY_UNRESOLVED",
-                        from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
-                        to_stage=Stage.PAYMENT_ATTEMPT,
-                        severity="medium",
-                        explanation=(
-                            "A replay-like attempt follows settlement failure, but "
-                            "the trace cannot prove whether it reused the failed "
+                            "terminal finality event can be bound to the same "
                             "payment identity."
                         ),
                         operation_id=operation_id,
-                        evidence=[
-                            contract.event,
-                            verification,
-                            finality,
-                            *unresolved_replays,
-                        ],
+                        evidence=[*contract.events, verification, *(e for _, e in finalities)],
                     ),
                 )
+                continue
 
-            for replay_index, replay in replays:
-                deliveries = [
-                    (index, event)
-                    for index, event in scoped
-                    if index > replay_index
-                    and event.stage == Stage.RESOURCE_OUTCOME_DELIVERY
-                    and event.key == "delivery_status"
-                    and _status(event.value) in _DELIVERED_STATUSES
-                    and _matches_attempt(replay, event)
-                ]
-                if not deliveries:
-                    continue
+            failed_finalities = [
+                (index, event)
+                for index, event in terminal_finalities
+                if _status(event.value) in _FAILED_FINALITY_STATUSES
+            ]
+            if not failed_finalities:
+                continue
 
-                delivery_index, delivery = deliveries[0]
-                basis = _latest_matching(
-                    scoped,
-                    after=replay_index,
-                    before_or_at=delivery_index,
-                    stage=Stage.RESOURCE_OUTCOME_DELIVERY,
-                    key="delivery_authority_basis",
-                    reference=replay,
+            for failure_index, failure in failed_finalities:
+                next_settlement = next(
+                    (
+                        (index, event)
+                        for index, event in terminal_finalities
+                        if index > failure_index
+                        and _status(event.value) in _SETTLED_STATUSES
+                    ),
+                    None,
                 )
-                settled_after_replay = _latest_matching(
+                cache_window_end = (
+                    next_settlement[0] - 1 if next_settlement is not None else None
+                )
+                cache = _latest_matching(
                     scoped,
-                    after=replay_index,
-                    before_or_at=delivery_index,
-                    stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
-                    key="payment_status",
-                    reference=replay,
+                    after=failure_index,
+                    before_or_at=cache_window_end,
+                    stage=Stage.RECONCILIATION,
+                    key="admission_cache_status",
+                    reference=verification,
                     authoritative=True,
                 )
-                has_settlement_authority = bool(
-                    settled_after_replay
-                    and _status(settled_after_replay[1].value) in _SETTLED_STATUSES
-                )
+                cache_status = _status(cache[1].value) if cache else None
+                if cache is None or cache_status not in (
+                    _ACTIVE_CACHE_STATUSES | _SAFE_CACHE_STATUSES
+                ):
+                    _append_unique(
+                        findings,
+                        seen,
+                        _finding(
+                            code="VERIFICATION_CACHE_STATUS_MISSING",
+                            from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                            to_stage=Stage.RECONCILIATION,
+                            severity="medium",
+                            explanation=(
+                                "Settlement failed after verification, but no "
+                                "authoritative recognized cache state shows whether "
+                                "verification-derived admission was revoked."
+                            ),
+                            operation_id=operation_id,
+                            evidence=[
+                                *contract.events,
+                                verification,
+                                failure,
+                                cache[1] if cache else None,
+                            ],
+                        ),
+                    )
+                elif cache_status in _ACTIVE_CACHE_STATUSES:
+                    _append_unique(
+                        findings,
+                        seen,
+                        _finding(
+                            code="VERIFICATION_CACHE_SURVIVES_SETTLEMENT_FAILURE",
+                            from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                            to_stage=Stage.RECONCILIATION,
+                            severity="high",
+                            explanation=(
+                                "Verification-derived admission state remains active "
+                                "after authoritative settlement failure."
+                            ),
+                            operation_id=operation_id,
+                            evidence=[*contract.events, verification, failure, cache[1]],
+                        ),
+                    )
 
-                entitlement = None
-                if contract.allow_non_payment_entitlement:
-                    entitlement = _valid_non_payment_entitlement(
+                later_attempts = [
+                    (index, event)
+                    for index, event in scoped
+                    if index > failure_index
+                    and event.stage == Stage.PAYMENT_ATTEMPT
+                    and event.key == "attempt"
+                ]
+                replays: list[tuple[int, StateEvent]] = []
+                unresolved_replays: list[StateEvent] = []
+                for attempt_index, attempt in later_attempts:
+                    relation = _identity_relation(verification, attempt)
+                    if relation == "matched":
+                        replays.append((attempt_index, attempt))
+                    elif relation == "unresolved" and _is_replay_attempt(attempt):
+                        unresolved_replays.append(attempt)
+
+                if unresolved_replays:
+                    _append_unique(
+                        findings,
+                        seen,
+                        _finding(
+                            code="REPLAY_PAYMENT_IDENTITY_UNRESOLVED",
+                            from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                            to_stage=Stage.PAYMENT_ATTEMPT,
+                            severity="medium",
+                            explanation=(
+                                "A replay-like attempt follows settlement failure, "
+                                "but the trace cannot prove whether it reused the "
+                                "failed payment identity."
+                            ),
+                            operation_id=operation_id,
+                            evidence=[
+                                *contract.events,
+                                verification,
+                                failure,
+                                *unresolved_replays,
+                            ],
+                        ),
+                    )
+
+                for replay_index, replay in replays:
+                    deliveries = [
+                        (index, event)
+                        for index, event in scoped
+                        if index > replay_index
+                        and event.stage == Stage.RESOURCE_OUTCOME_DELIVERY
+                        and event.key == "delivery_status"
+                        and _status(event.value) in _DELIVERED_STATUSES
+                        and _matches_attempt(replay, event)
+                    ]
+                    if not deliveries:
+                        continue
+
+                    delivery_index, delivery = deliveries[0]
+                    basis = _latest_matching(
                         scoped,
                         after=replay_index,
                         before_or_at=delivery_index,
-                        operation_id=operation_id,
+                        stage=Stage.RESOURCE_OUTCOME_DELIVERY,
+                        key="delivery_authority_basis",
+                        reference=replay,
                     )
-                basis_value = _basis(basis[1].value) if basis else None
-                has_entitlement_authority = bool(
-                    basis_value == "non_payment_entitlement" and entitlement
-                )
-
-                if basis is None:
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="DELIVERY_AUTHORITY_BASIS_MISSING",
-                            from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
-                            to_stage=Stage.RESOURCE_OUTCOME_DELIVERY,
-                            severity="medium",
-                            explanation=(
-                                "A replay produced delivery, but the trace does not "
-                                "identify the authority used to release the outcome."
-                            ),
-                            operation_id=operation_id,
-                            evidence=[contract.event, verification, finality, replay, delivery],
-                        ),
+                    # Finality is chronology-sensitive. A matching settlement may
+                    # occur before or after the replay, but it must occur after
+                    # the failed boundary and no later than delivery. Settlement
+                    # observed after delivery cannot retroactively authorize it.
+                    settled_before_delivery = _latest_matching(
+                        scoped,
+                        after=failure_index,
+                        before_or_at=delivery_index,
+                        stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                        key="payment_status",
+                        reference=replay,
+                        authoritative=True,
                     )
-                elif basis_value == "verification_cache":
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="VERIFICATION_USED_AS_DELIVERY_AUTHORITY",
-                            from_stage=Stage.CLAIMED_RESULT,
-                            to_stage=Stage.RESOURCE_OUTCOME_DELIVERY,
-                            severity="high",
-                            explanation=(
-                                "The delivered outcome names verification-derived "
-                                "cache state, rather than finality, as its authority."
-                            ),
-                            operation_id=operation_id,
-                            evidence=[
-                                contract.event,
-                                verification,
-                                finality,
-                                replay,
-                                basis[1],
-                                delivery,
-                            ],
-                        ),
-                    )
-                elif basis_value == "settlement_finality" and not has_settlement_authority:
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="DELIVERY_AUTHORITY_FINALITY_UNRESOLVED",
-                            from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
-                            to_stage=Stage.RESOURCE_OUTCOME_DELIVERY,
-                            severity="high",
-                            explanation=(
-                                "Delivery claims settlement finality as authority, "
-                                "but no matching settled event precedes delivery."
-                            ),
-                            operation_id=operation_id,
-                            evidence=[
-                                contract.event,
-                                verification,
-                                finality,
-                                replay,
-                                basis[1],
-                                delivery,
-                            ],
-                        ),
-                    )
-                elif basis_value == "non_payment_entitlement" and not has_entitlement_authority:
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="DELIVERY_AUTHORITY_FINALITY_UNRESOLVED",
-                            from_stage=Stage.POLICY_DECISION,
-                            to_stage=Stage.RESOURCE_OUTCOME_DELIVERY,
-                            severity="high",
-                            explanation=(
-                                "Delivery claims a non-payment entitlement, but no "
-                                "authoritative entitlement evidence supports it."
-                            ),
-                            operation_id=operation_id,
-                            evidence=[
-                                contract.event,
-                                verification,
-                                finality,
-                                replay,
-                                basis[1],
-                                delivery,
-                            ],
-                        ),
+                    has_settlement_authority = bool(
+                        settled_before_delivery
+                        and _status(settled_before_delivery[1].value)
+                        in _SETTLED_STATUSES
                     )
 
-                if not has_settlement_authority and not has_entitlement_authority:
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="REPLAY_DELIVERY_AFTER_FAILED_SETTLEMENT",
-                            from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
-                            to_stage=Stage.RESOURCE_OUTCOME_DELIVERY,
-                            severity="critical",
-                            explanation=(
-                                "The same payment identity was replayed into a "
-                                "delivered outcome after authoritative settlement "
-                                "failure, without later settlement or separate "
-                                "entitlement authority."
-                            ),
+                    entitlement = None
+                    if contract.allow_non_payment_entitlement:
+                        entitlement = _valid_non_payment_entitlement(
+                            scoped,
+                            after=failure_index,
+                            before_or_at=delivery_index,
                             operation_id=operation_id,
-                            evidence=[
-                                contract.event,
-                                verification,
-                                finality,
-                                replay,
-                                basis[1] if basis else None,
-                                delivery,
-                            ],
-                        ),
+                        )
+                    basis_value = _basis(basis[1].value) if basis else None
+                    has_entitlement_authority = bool(
+                        basis_value == "non_payment_entitlement" and entitlement
                     )
+
+                    if basis is None:
+                        _append_unique(
+                            findings,
+                            seen,
+                            _finding(
+                                code="DELIVERY_AUTHORITY_BASIS_MISSING",
+                                from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                                to_stage=Stage.RESOURCE_OUTCOME_DELIVERY,
+                                severity="medium",
+                                explanation=(
+                                    "A replay produced delivery, but the trace does "
+                                    "not identify the authority used to release the "
+                                    "outcome."
+                                ),
+                                operation_id=operation_id,
+                                evidence=[
+                                    *contract.events,
+                                    verification,
+                                    failure,
+                                    replay,
+                                    delivery,
+                                ],
+                            ),
+                        )
+                    elif basis_value == "verification_cache":
+                        _append_unique(
+                            findings,
+                            seen,
+                            _finding(
+                                code="VERIFICATION_USED_AS_DELIVERY_AUTHORITY",
+                                from_stage=Stage.CLAIMED_RESULT,
+                                to_stage=Stage.RESOURCE_OUTCOME_DELIVERY,
+                                severity="high",
+                                explanation=(
+                                    "The delivered outcome names verification-derived "
+                                    "cache state, rather than finality, as its authority."
+                                ),
+                                operation_id=operation_id,
+                                evidence=[
+                                    *contract.events,
+                                    verification,
+                                    failure,
+                                    replay,
+                                    basis[1],
+                                    delivery,
+                                ],
+                            ),
+                        )
+                    elif (
+                        basis_value == "settlement_finality"
+                        and not has_settlement_authority
+                    ):
+                        _append_unique(
+                            findings,
+                            seen,
+                            _finding(
+                                code="DELIVERY_AUTHORITY_FINALITY_UNRESOLVED",
+                                from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                                to_stage=Stage.RESOURCE_OUTCOME_DELIVERY,
+                                severity="high",
+                                explanation=(
+                                    "Delivery claims settlement finality as authority, "
+                                    "but no matching settled event precedes delivery."
+                                ),
+                                operation_id=operation_id,
+                                evidence=[
+                                    *contract.events,
+                                    verification,
+                                    failure,
+                                    replay,
+                                    basis[1],
+                                    delivery,
+                                ],
+                            ),
+                        )
+                    elif (
+                        basis_value == "non_payment_entitlement"
+                        and not has_entitlement_authority
+                    ):
+                        _append_unique(
+                            findings,
+                            seen,
+                            _finding(
+                                code="DELIVERY_AUTHORITY_FINALITY_UNRESOLVED",
+                                from_stage=Stage.POLICY_DECISION,
+                                to_stage=Stage.RESOURCE_OUTCOME_DELIVERY,
+                                severity="high",
+                                explanation=(
+                                    "Delivery claims a non-payment entitlement, but "
+                                    "no authoritative entitlement evidence supports it."
+                                ),
+                                operation_id=operation_id,
+                                evidence=[
+                                    *contract.events,
+                                    verification,
+                                    failure,
+                                    replay,
+                                    basis[1],
+                                    delivery,
+                                ],
+                            ),
+                        )
+
+                    if not has_settlement_authority and not has_entitlement_authority:
+                        _append_unique(
+                            findings,
+                            seen,
+                            _finding(
+                                code="REPLAY_DELIVERY_AFTER_FAILED_SETTLEMENT",
+                                from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                                to_stage=Stage.RESOURCE_OUTCOME_DELIVERY,
+                                severity="critical",
+                                explanation=(
+                                    "The same payment identity was replayed into a "
+                                    "delivered outcome after authoritative settlement "
+                                    "failure, without settlement or separate entitlement "
+                                    "authority existing at delivery time."
+                                ),
+                                operation_id=operation_id,
+                                evidence=[
+                                    *contract.events,
+                                    verification,
+                                    failure,
+                                    replay,
+                                    basis[1] if basis else None,
+                                    delivery,
+                                    settled_before_delivery[1]
+                                    if settled_before_delivery
+                                    else None,
+                                ],
+                            ),
+                        )
 
     return findings
 
