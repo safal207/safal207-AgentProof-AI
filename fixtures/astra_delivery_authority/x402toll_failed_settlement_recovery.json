@@ -1,0 +1,192 @@
+{
+  "trace_id": "astra-x402toll-finality-recovery-green-001",
+  "protocol": "x402/exact-eip3009",
+  "scenario": "The first authorization verifies but fails to settle, its verification cache is revoked, replay of that nonce is denied, and a fresh authorization later settles and delivers exactly once.",
+  "expected_codes": [],
+  "expected_verdict": "VERIFIED",
+  "events": [
+    {
+      "stage": "REQUEST",
+      "key": "business_obligation",
+      "value": "one_paid_computation",
+      "source": "x402toll-resource-server",
+      "operation_id": "x402toll-call-002"
+    },
+    {
+      "stage": "POLICY DECISION",
+      "key": "requires_finality_bound_delivery_authority",
+      "value": {
+        "required": true,
+        "verification_not_delivery_authority": true
+      },
+      "source": "astra-delivery-authority-contract",
+      "operation_id": "x402toll-call-002"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "payment_authorization",
+      "value": "signed",
+      "source": "eip3009-client",
+      "operation_id": "x402toll-call-002",
+      "authorization_id": "nonce-failed-002-a",
+      "payment_id": "nonce-failed-002-a"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "initial_settlement_attempt",
+      "source": "x402toll-payment-handler",
+      "operation_id": "x402toll-call-002",
+      "attempt_id": "attempt-002-a",
+      "authorization_id": "nonce-failed-002-a",
+      "payment_id": "nonce-failed-002-a"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_verification_status",
+      "value": "verified",
+      "source": "facilitator-verify",
+      "operation_id": "x402toll-call-002",
+      "attempt_id": "attempt-002-a",
+      "authorization_id": "nonce-failed-002-a",
+      "payment_id": "nonce-failed-002-a"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "failed",
+      "source": "facilitator-settlement-result",
+      "authoritative": true,
+      "operation_id": "x402toll-call-002",
+      "attempt_id": "attempt-002-a",
+      "authorization_id": "nonce-failed-002-a",
+      "payment_id": "nonce-failed-002-a"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "admission_cache_status",
+      "value": "revoked",
+      "source": "idempotency-cache",
+      "authoritative": true,
+      "operation_id": "x402toll-call-002",
+      "authorization_id": "nonce-failed-002-a",
+      "payment_id": "nonce-failed-002-a"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "replay_same_authorization",
+      "source": "replayed-client-request",
+      "operation_id": "x402toll-call-002",
+      "attempt_id": "attempt-002-a-replay",
+      "authorization_id": "nonce-failed-002-a",
+      "payment_id": "nonce-failed-002-a"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "replay_status",
+      "value": "denied_after_failed_settlement",
+      "source": "x402toll-regression-guard",
+      "operation_id": "x402toll-call-002",
+      "attempt_id": "attempt-002-a-replay",
+      "authorization_id": "nonce-failed-002-a",
+      "payment_id": "nonce-failed-002-a"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "payment_authorization",
+      "value": "fresh_authorization_signed",
+      "source": "eip3009-client",
+      "operation_id": "x402toll-call-002",
+      "authorization_id": "nonce-settled-002-b",
+      "payment_id": "nonce-settled-002-b"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "fresh_settlement_attempt",
+      "source": "x402toll-payment-handler",
+      "operation_id": "x402toll-call-002",
+      "attempt_id": "attempt-002-b",
+      "authorization_id": "nonce-settled-002-b",
+      "payment_id": "nonce-settled-002-b"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_verification_status",
+      "value": "verified",
+      "source": "facilitator-verify",
+      "operation_id": "x402toll-call-002",
+      "attempt_id": "attempt-002-b",
+      "authorization_id": "nonce-settled-002-b",
+      "payment_id": "nonce-settled-002-b"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "facilitator-settlement-response",
+      "operation_id": "x402toll-call-002",
+      "attempt_id": "attempt-002-b",
+      "authorization_id": "nonce-settled-002-b",
+      "payment_id": "nonce-settled-002-b"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-chain-finality",
+      "authoritative": true,
+      "operation_id": "x402toll-call-002",
+      "attempt_id": "attempt-002-b",
+      "authorization_id": "nonce-settled-002-b",
+      "payment_id": "nonce-settled-002-b"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_authority_basis",
+      "value": "settlement_finality",
+      "source": "x402toll-payment-handler",
+      "operation_id": "x402toll-call-002",
+      "attempt_id": "attempt-002-b",
+      "authorization_id": "nonce-settled-002-b",
+      "payment_id": "nonce-settled-002-b"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "merchant-payment-receipt",
+      "operation_id": "x402toll-call-002",
+      "payment_id": "nonce-settled-002-b"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "response_provenance_status",
+      "value": "verified",
+      "source": "response-provenance-verifier",
+      "operation_id": "x402toll-call-002",
+      "attempt_id": "attempt-002-b",
+      "authorization_id": "nonce-settled-002-b",
+      "payment_id": "nonce-settled-002-b"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "x402toll-paid-response",
+      "operation_id": "x402toll-call-002",
+      "attempt_id": "attempt-002-b",
+      "authorization_id": "nonce-settled-002-b",
+      "payment_id": "nonce-settled-002-b"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "complete",
+      "source": "operation-ledger",
+      "authoritative": true,
+      "operation_id": "x402toll-call-002"
+    }
+  ]
+}

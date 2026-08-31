@@ -1,0 +1,121 @@
+{
+  "trace_id": "astra-x402toll-verification-cache-red-001",
+  "protocol": "x402/exact-eip3009",
+  "scenario": "A payment verifies, authoritative settlement fails, authoritative verification-derived admission state remains replayable, and the same authorization is replayed into a paid response whose response-provenance hash is valid.",
+  "expected_codes": [
+    "DELIVERED_BUT_NOT_SETTLED",
+    "REPLAY_DELIVERY_AFTER_FAILED_SETTLEMENT",
+    "VERIFICATION_CACHE_SURVIVES_SETTLEMENT_FAILURE",
+    "VERIFICATION_USED_AS_DELIVERY_AUTHORITY"
+  ],
+  "expected_verdict": "DIVERGED",
+  "events": [
+    {
+      "stage": "REQUEST",
+      "key": "business_obligation",
+      "value": "one_paid_computation",
+      "source": "x402toll-resource-server",
+      "operation_id": "x402toll-call-001"
+    },
+    {
+      "stage": "POLICY DECISION",
+      "key": "requires_finality_bound_delivery_authority",
+      "value": {
+        "required": true,
+        "verification_not_delivery_authority": true
+      },
+      "source": "astra-delivery-authority-contract",
+      "operation_id": "x402toll-call-001"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "payment_authorization",
+      "value": "signed",
+      "source": "eip3009-client",
+      "operation_id": "x402toll-call-001",
+      "authorization_id": "nonce-live-hole-001",
+      "payment_id": "nonce-live-hole-001"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "initial_settlement_attempt",
+      "source": "x402toll-payment-handler",
+      "operation_id": "x402toll-call-001",
+      "attempt_id": "attempt-initial-001",
+      "authorization_id": "nonce-live-hole-001",
+      "payment_id": "nonce-live-hole-001"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_verification_status",
+      "value": "verified",
+      "source": "facilitator-verify",
+      "operation_id": "x402toll-call-001",
+      "attempt_id": "attempt-initial-001",
+      "authorization_id": "nonce-live-hole-001",
+      "payment_id": "nonce-live-hole-001"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "failed",
+      "source": "facilitator-settlement-result",
+      "authoritative": true,
+      "operation_id": "x402toll-call-001",
+      "attempt_id": "attempt-initial-001",
+      "authorization_id": "nonce-live-hole-001",
+      "payment_id": "nonce-live-hole-001"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "admission_cache_status",
+      "value": "replayable",
+      "source": "idempotency-cache",
+      "authoritative": true,
+      "operation_id": "x402toll-call-001",
+      "authorization_id": "nonce-live-hole-001",
+      "payment_id": "nonce-live-hole-001"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "replay_same_authorization",
+      "source": "replayed-client-request",
+      "operation_id": "x402toll-call-001",
+      "attempt_id": "attempt-replay-001",
+      "authorization_id": "nonce-live-hole-001",
+      "payment_id": "nonce-live-hole-001"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_authority_basis",
+      "value": "verification_cache",
+      "source": "idempotency-cache-hit",
+      "operation_id": "x402toll-call-001",
+      "attempt_id": "attempt-replay-001",
+      "authorization_id": "nonce-live-hole-001",
+      "payment_id": "nonce-live-hole-001"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "response_provenance_status",
+      "value": "verified",
+      "source": "response-provenance-verifier",
+      "operation_id": "x402toll-call-001",
+      "attempt_id": "attempt-replay-001",
+      "authorization_id": "nonce-live-hole-001",
+      "payment_id": "nonce-live-hole-001"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "x402toll-paid-response",
+      "operation_id": "x402toll-call-001",
+      "attempt_id": "attempt-replay-001",
+      "authorization_id": "nonce-live-hole-001",
+      "payment_id": "nonce-live-hole-001"
+    }
+  ]
+}
