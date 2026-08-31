@@ -1,0 +1,199 @@
+{
+  "trace_id": "astra-agentcore-upto-accounting-green-001",
+  "protocol": "aws-agentcore-payments/x402-upto",
+  "scenario": "The buyer authorizes 3303 atomic USDC, the seller settles 3003, the payment session is authoritatively debited by 3303 under the documented ceiling/no-credit policy, and wallet plus session ledgers reconcile independently.",
+  "expected_codes": [],
+  "expected_verdict": "VERIFIED",
+  "events": [
+    {
+      "stage": "REQUEST",
+      "key": "business_obligation",
+      "value": "one_metered_inference_call",
+      "source": "agentcore-upto-tutorial",
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001"
+    },
+    {
+      "stage": "POLICY DECISION",
+      "key": "payment_session_accounting_contract",
+      "value": {
+        "required": true,
+        "debit_basis": "authorized_ceiling",
+        "remainder_policy": "not_credited"
+      },
+      "source": "agentcore-session-accounting-contract",
+      "session_id": "session-upto-green"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "authorized_ceiling_minor",
+      "value": {
+        "amount_minor": "3303",
+        "asset": "USDC"
+      },
+      "source": "agentcore-process-payment-proof",
+      "authoritative": true,
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001",
+      "authorization_id": "permit2-auth-green-001",
+      "payment_id": "process-payment-green-001"
+    },
+    {
+      "stage": "POLICY DECISION",
+      "key": "session_remaining_before_minor",
+      "value": {
+        "amount_minor": "50000",
+        "asset": "USDC"
+      },
+      "source": "agentcore-session-ledger",
+      "authoritative": true,
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001",
+      "authorization_id": "permit2-auth-green-001",
+      "payment_id": "process-payment-green-001"
+    },
+    {
+      "stage": "POLICY DECISION",
+      "key": "session_debit_minor",
+      "value": {
+        "amount_minor": "3303",
+        "asset": "USDC"
+      },
+      "source": "agentcore-session-ledger",
+      "authoritative": true,
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001",
+      "authorization_id": "permit2-auth-green-001",
+      "payment_id": "process-payment-green-001"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "upto_proof_submitted",
+      "source": "agentcore-payments-plugin",
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001",
+      "attempt_id": "upto-attempt-green-001",
+      "authorization_id": "permit2-auth-green-001",
+      "payment_id": "process-payment-green-001"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "seller-payment-response",
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001",
+      "attempt_id": "upto-attempt-green-001",
+      "authorization_id": "permit2-auth-green-001",
+      "payment_id": "process-payment-green-001"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "base-mainnet-finality",
+      "authoritative": true,
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001",
+      "attempt_id": "upto-attempt-green-001",
+      "authorization_id": "permit2-auth-green-001",
+      "payment_id": "process-payment-green-001"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "settled_amount_minor",
+      "value": {
+        "amount_minor": "3003",
+        "asset": "USDC"
+      },
+      "source": "base-mainnet-finality",
+      "authoritative": true,
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001",
+      "attempt_id": "upto-attempt-green-001",
+      "authorization_id": "permit2-auth-green-001",
+      "payment_id": "process-payment-green-001"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "session_credit_minor",
+      "value": {
+        "amount_minor": "0",
+        "asset": "USDC"
+      },
+      "source": "agentcore-session-ledger",
+      "authoritative": true,
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001",
+      "authorization_id": "permit2-auth-green-001",
+      "payment_id": "process-payment-green-001"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "session_remaining_after_minor",
+      "value": {
+        "amount_minor": "46697",
+        "asset": "USDC"
+      },
+      "source": "agentcore-session-ledger",
+      "authoritative": true,
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001",
+      "authorization_id": "permit2-auth-green-001",
+      "payment_id": "process-payment-green-001"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "claimed_session_spend_minor",
+      "value": {
+        "amount_minor": "3303",
+        "asset": "USDC"
+      },
+      "source": "application-budget-dashboard",
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001",
+      "authorization_id": "permit2-auth-green-001",
+      "payment_id": "process-payment-green-001"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "claimed_session_remaining_minor",
+      "value": {
+        "amount_minor": "46697",
+        "asset": "USDC"
+      },
+      "source": "application-budget-dashboard",
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001",
+      "authorization_id": "permit2-auth-green-001",
+      "payment_id": "process-payment-green-001"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "merchant-payment-receipt",
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001",
+      "payment_id": "process-payment-green-001"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "metered-inference-response",
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "complete",
+      "source": "operation-ledger",
+      "authoritative": true,
+      "session_id": "session-upto-green",
+      "operation_id": "upto-call-green-001"
+    }
+  ]
+}
