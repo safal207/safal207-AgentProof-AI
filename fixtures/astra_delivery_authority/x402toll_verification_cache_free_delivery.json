@@ -1,7 +1,7 @@
 {
   "trace_id": "astra-x402toll-verification-cache-red-001",
   "protocol": "x402/exact-eip3009",
-  "scenario": "A payment verifies, authoritative settlement fails, verification-derived admission state remains replayable, and the same authorization is replayed into a paid response whose response-provenance hash is valid.",
+  "scenario": "A payment verifies, authoritative settlement fails, authoritative verification-derived admission state remains replayable, and the same authorization is replayed into a paid response whose response-provenance hash is valid.",
   "expected_codes": [
     "DELIVERED_BUT_NOT_SETTLED",
     "REPLAY_DELIVERY_AFTER_FAILED_SETTLEMENT",
@@ -72,6 +72,7 @@
       "key": "admission_cache_status",
       "value": "replayable",
       "source": "idempotency-cache",
+      "authoritative": true,
       "operation_id": "x402toll-call-001",
       "authorization_id": "nonce-live-hole-001",
       "payment_id": "nonce-live-hole-001"
