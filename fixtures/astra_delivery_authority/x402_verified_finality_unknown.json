@@ -1,0 +1,46 @@
+{
+  "trace_id": "astra-x402-verification-finality-unresolved-001",
+  "protocol": "x402/generic",
+  "scenario": "Payment verification succeeds, but no authoritative settlement observation is available and no resource is delivered.",
+  "expected_codes": [
+    "SETTLEMENT_FINALITY_EVIDENCE_MISSING"
+  ],
+  "expected_verdict": "UNRESOLVED",
+  "events": [
+    {
+      "stage": "REQUEST",
+      "key": "business_obligation",
+      "value": "one_paid_resource",
+      "source": "resource-server",
+      "operation_id": "x402-finality-unknown-001"
+    },
+    {
+      "stage": "POLICY DECISION",
+      "key": "requires_finality_bound_delivery_authority",
+      "value": {
+        "required": true,
+        "verification_not_delivery_authority": true
+      },
+      "source": "astra-delivery-authority-contract",
+      "operation_id": "x402-finality-unknown-001"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "settlement_submitted",
+      "source": "merchant-payment-handler",
+      "operation_id": "x402-finality-unknown-001",
+      "attempt_id": "attempt-finality-unknown-001",
+      "authorization_id": "authorization-finality-unknown-001"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_verification_status",
+      "value": "verified",
+      "source": "facilitator-verify",
+      "operation_id": "x402-finality-unknown-001",
+      "attempt_id": "attempt-finality-unknown-001",
+      "authorization_id": "authorization-finality-unknown-001"
+    }
+  ]
+}
