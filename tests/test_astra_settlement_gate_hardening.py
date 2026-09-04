@@ -162,7 +162,10 @@ def test_same_attempt_id_with_different_payment_identity_is_divergent():
         ),
     ]
 
-    assert codes(events) == {"SETTLEMENT_GATE_IDENTITY_DIVERGENCE"}
+    assert codes(events) == {
+        "SETTLEMENT_GATE_FINALITY_EVIDENCE_MISSING",
+        "SETTLEMENT_GATE_IDENTITY_DIVERGENCE",
+    }
 
 
 def test_partial_typed_identity_match_plus_conflict_is_divergent():
@@ -178,7 +181,10 @@ def test_partial_typed_identity_match_plus_conflict_is_divergent():
         ),
     ]
 
-    assert codes(events) == {"SETTLEMENT_GATE_IDENTITY_DIVERGENCE"}
+    assert codes(events) == {
+        "SETTLEMENT_GATE_FINALITY_EVIDENCE_MISSING",
+        "SETTLEMENT_GATE_IDENTITY_DIVERGENCE",
+    }
 
 
 def test_public_leak_before_failure_does_not_add_redundant_disposal_finding():
