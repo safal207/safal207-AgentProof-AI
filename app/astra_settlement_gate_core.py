@@ -246,6 +246,17 @@ def _chronological(items: Iterable[_IndexedEvent]) -> list[_IndexedEvent]:
     return sorted(materialized, key=lambda item: item.index)
 
 
+def _chronological_public(
+    items: Iterable[tuple[_IndexedEvent, str]],
+) -> list[tuple[_IndexedEvent, str]]:
+    materialized = list(items)
+    kinds = {item.index: kind for item, kind in materialized}
+    return [
+        (item, kinds[item.index])
+        for item in _chronological(item for item, _ in materialized)
+    ]
+
+
 def _finding(
     *,
     code: str,
@@ -479,12 +490,16 @@ def verify_settlement_gated_delivery(
         and item.event.key == "payment_verification_status"
         and _status(item.event.value) in _VERIFIED_STATUSES
     ]
-    operations = set(contracts)
+    operations = {
+        operation_id for operation_id in contracts if operation_id is not None
+    }
     operations.update(
         item.event.operation_id
         for item in verifications
         if _applicable_contract(contracts, item.event.operation_id) is not None
     )
+    if not operations and None in contracts:
+        operations.add(None)
 
     for operation_id in sorted(
         operations,
@@ -635,15 +650,25 @@ def verify_settlement_gated_delivery(
                 )
 
             ordered_finalities = _chronological(related.finalities)
-            ordered_public = sorted(
-                related.public_events,
-                key=lambda pair: (
-                    _epoch(pair[0].event.observed_at)
-                    if _epoch(pair[0].event.observed_at) is not None
-                    else Decimal(pair[0].index),
-                    pair[0].index,
-                ),
-            )
+            ordered_public = _chronological_public(related.public_events)
+            if not ordered_finalities and not ordered_public:
+                _append_unique(
+                    findings,
+                    seen,
+                    _finding(
+                        code="SETTLEMENT_GATE_FINALITY_EVIDENCE_MISSING",
+                        from_stage=Stage.CLAIMED_RESULT,
+                        to_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                        severity="medium",
+                        explanation=(
+                            "Payment verification succeeded, but no matching "
+                            "authoritative terminal settlement evidence appears in "
+                            "the trace."
+                        ),
+                        operation_id=operation_id,
+                        evidence=[*contract.events, verification.event],
+                    ),
+                )
 
             for public_event, kind in ordered_public:
                 before = [
@@ -784,9 +809,6 @@ def verify_settlement_gated_delivery(
                 if not private_before:
                     continue
 
-                # Once protected output is public, commit/delivery findings are
-                # the relevant result. A disposal finding would only duplicate
-                # an already irreversible disclosure.
                 if _has_public_event_by(related.public_events, failure):
                     continue
 
@@ -800,32 +822,18 @@ def verify_settlement_gated_delivery(
                     None,
                 )
                 first_public = _first_public_after(related.public_events, failure)
-                boundaries = [
-                    item
-                    for item in (later_settlement, first_public)
-                    if item is not None
-                ]
-                boundary = _chronological(boundaries)[0] if boundaries else None
 
-                # A later settlement before any public reuse makes the staged
-                # body economically releasable; explicit disposal is unnecessary.
-                if (
-                    later_settlement is not None
-                    and (
-                        first_public is None
-                        or _no_later_than(later_settlement, first_public)
-                    )
-                ):
+                # The first subsequent release boundary is decisive. A later
+                # settlement closes the failed-state window before publication;
+                # an earlier public event is already covered by stronger leak
+                # findings. Disposal evidence matters only when neither occurs.
+                if later_settlement is not None or first_public is not None:
                     continue
 
                 post_failure_states = [
                     item
                     for item in related.response_states
                     if _strictly_later(item, failure)
-                    and (
-                        boundary is None
-                        or _no_later_than(item, boundary)
-                    )
                 ]
                 latest_post = (
                     _chronological(post_failure_states)[-1]
@@ -846,7 +854,7 @@ def verify_settlement_gated_delivery(
                             explanation=(
                                 "Settlement failed after protected output was staged, "
                                 "but disposal or continued non-public state is not "
-                                "established before the next release boundary."
+                                "established."
                             ),
                             operation_id=operation_id,
                             evidence=[
