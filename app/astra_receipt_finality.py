@@ -69,7 +69,7 @@ class _Receipt:
 @dataclass(frozen=True)
 class _RailSelection:
     status_before_receipt: _IndexedEvent | None
-    settled_after_receipt: _IndexedEvent | None
+    status_after_receipt: _IndexedEvent | None
     confirmation_before_receipt: _Confirmation | None
     confirmation_after_receipt: _Confirmation | None
     identity_unresolved: bool = False
@@ -328,21 +328,30 @@ def _same_receipt_candidates(
     key: str,
     identity: Mapping[str, str],
     authoritative: bool | None = None,
-) -> list[_IndexedEvent]:
+) -> tuple[list[_IndexedEvent], list[_IndexedEvent]]:
     matched: list[_IndexedEvent] = []
+    conflicting: list[_IndexedEvent] = []
     for item in indexed:
         event = item.event
         if event.stage != Stage.RECEIPT or event.key != key:
             continue
+        if event.operation_id != anchor.event.operation_id:
+            continue
         if authoritative is not None and event.authoritative is not authoritative:
             continue
-        if _belongs_to_receipt(
-            event,
-            operation_id=anchor.event.operation_id,
-            identity=identity,
-        ):
+        if not identity:
+            if not _identity_values(event):
+                matched.append(item)
+            continue
+        relation = _identity_relation(identity, event)
+        if relation == "matched":
             matched.append(item)
-    return matched
+        elif (
+            relation == "divergent"
+            and _shares_equal_typed_identity(identity, event)
+        ):
+            conflicting.append(item)
+    return matched, conflicting
 
 
 def _select_receipt(
@@ -411,6 +420,33 @@ def _select_receipt(
         )
         identity = {}
 
+    invalid_status_candidates = [
+        item
+        for item in status_candidates
+        if _canonical_payment_status(item.event.value) is None
+    ]
+    if invalid_status_candidates:
+        _append_unique(
+            findings,
+            seen,
+            _finding(
+                code="RECEIPT_STATUS_EVIDENCE_INVALID",
+                from_stage=Stage.RECEIPT,
+                to_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                severity="medium",
+                explanation=(
+                    "One or more receipt status records for the same typed "
+                    "payment identity are not recognized."
+                ),
+                operation_id=operation_id,
+                evidence=[
+                    *contract.events,
+                    *(item.event for item in invalid_status_candidates),
+                ],
+            ),
+        )
+        return None
+
     canonical_statuses = {
         status
         for item in status_candidates
@@ -458,12 +494,14 @@ def _select_receipt(
         )
         return None
 
-    integrity_candidates = _same_receipt_candidates(
-        indexed,
-        anchor=anchor,
-        key="receipt_integrity_status",
-        identity=identity,
-        authoritative=True,
+    integrity_candidates, integrity_identity_conflicts = (
+        _same_receipt_candidates(
+            indexed,
+            anchor=anchor,
+            key="receipt_integrity_status",
+            identity=identity,
+            authoritative=True,
+        )
     )
     integrity_states = {
         status
@@ -476,7 +514,29 @@ def _select_receipt(
     integrity_verified = False
     evidence_conflict = False
 
-    if has_verified and has_failed:
+    if integrity_identity_conflicts:
+        evidence_conflict = True
+        _append_unique(
+            findings,
+            seen,
+            _finding(
+                code="RECEIPT_EVIDENCE_CONFLICT",
+                from_stage=Stage.RECEIPT,
+                to_stage=Stage.RECEIPT,
+                severity="high",
+                explanation=(
+                    "Receipt integrity evidence shares one typed identifier with "
+                    "the receipt but conflicts on another."
+                ),
+                operation_id=operation_id,
+                evidence=[
+                    *contract.events,
+                    anchor.event,
+                    *(item.event for item in integrity_identity_conflicts),
+                ],
+            ),
+        )
+    elif has_verified and has_failed:
         evidence_conflict = True
         _append_unique(
             findings,
@@ -538,11 +598,13 @@ def _select_receipt(
             ),
         )
 
-    confirmation_candidates = _same_receipt_candidates(
-        indexed,
-        anchor=anchor,
-        key="receipt_rail_confirmation",
-        identity=identity,
+    confirmation_candidates, confirmation_identity_conflicts = (
+        _same_receipt_candidates(
+            indexed,
+            anchor=anchor,
+            key="receipt_rail_confirmation",
+            identity=identity,
+        )
     )
     parsed_confirmations = [
         parsed
@@ -550,7 +612,29 @@ def _select_receipt(
         if (parsed := _confirmation(item)) is not None
     ]
     confirmation: _Confirmation | None = None
-    if parsed_confirmations:
+    if confirmation_identity_conflicts:
+        evidence_conflict = True
+        _append_unique(
+            findings,
+            seen,
+            _finding(
+                code="RECEIPT_EVIDENCE_CONFLICT",
+                from_stage=Stage.RECEIPT,
+                to_stage=Stage.RECEIPT,
+                severity="high",
+                explanation=(
+                    "Receipt confirmation evidence shares one typed identifier "
+                    "with the receipt but conflicts on another."
+                ),
+                operation_id=operation_id,
+                evidence=[
+                    *contract.events,
+                    anchor.event,
+                    *(item.event for item in confirmation_identity_conflicts),
+                ],
+            ),
+        )
+    elif parsed_confirmations:
         fingerprints = {
             (
                 item.psp_confirmation_id,
@@ -714,12 +798,12 @@ def _select_rail_evidence(
         item
         for item in usable_statuses
         if not _no_later_than(item, receipt.status)
-        and _canonical_payment_status(item.event.value) == "settled"
+        and _canonical_payment_status(item.event.value) is not None
     ]
     ordered_before = _chronological(status_before)
     ordered_after = _chronological(status_after)
     status_before_receipt = ordered_before[-1] if ordered_before else None
-    settled_after_receipt = ordered_after[0] if ordered_after else None
+    status_after_receipt = ordered_after[-1] if ordered_after else None
 
     matching_confirmations: list[_IndexedEvent] = []
     unresolved_confirmations: list[_IndexedEvent] = []
@@ -873,7 +957,7 @@ def _select_rail_evidence(
 
     return _RailSelection(
         status_before_receipt=status_before_receipt,
-        settled_after_receipt=settled_after_receipt,
+        status_after_receipt=status_after_receipt,
         confirmation_before_receipt=confirmation_before_receipt,
         confirmation_after_receipt=confirmation_after_receipt,
         identity_unresolved=identity_unresolved
@@ -1042,8 +1126,26 @@ def verify_independent_receipt_finality_binding(
                 if rail.status_before_receipt is not None
                 else None
             )
-
-            if finality_status == "failed":
+            later_finality_status = (
+                _canonical_payment_status(
+                    rail.status_after_receipt.event.value
+                )
+                if rail.status_after_receipt is not None
+                else None
+            )
+            finality_conflict = bool(
+                finality_status == "failed"
+                or (
+                    finality_status is None
+                    and later_finality_status == "failed"
+                )
+            )
+            if finality_conflict:
+                conflict_event = (
+                    rail.status_before_receipt
+                    if finality_status == "failed"
+                    else rail.status_after_receipt
+                )
                 _append_unique(
                     findings,
                     seen,
@@ -1054,14 +1156,13 @@ def verify_independent_receipt_finality_binding(
                         severity="critical",
                         explanation=(
                             "The signed receipt claims Success while authoritative "
-                            "rail finality for the same payment was non-settled at "
-                            "receipt issuance."
+                            "rail finality for the same payment is non-settled."
                         ),
                         operation_id=operation_id,
                         evidence=[
                             *contract.events,
                             receipt.status.event,
-                            rail.status_before_receipt.event,
+                            conflict_event.event if conflict_event else None,
                         ],
                     ),
                 )
@@ -1082,8 +1183,8 @@ def verify_independent_receipt_finality_binding(
                         evidence=[
                             *contract.events,
                             receipt.status.event,
-                            rail.settled_after_receipt.event
-                            if rail.settled_after_receipt
+                            rail.status_after_receipt.event
+                            if rail.status_after_receipt
                             else None,
                         ],
                     ),
@@ -1122,6 +1223,9 @@ def verify_independent_receipt_finality_binding(
                     ),
                 )
 
+            comparison_confirmation = (
+                rail_confirmation or rail.confirmation_after_receipt
+            )
             ids_match = bool(
                 receipt_confirmation
                 and rail_confirmation
@@ -1130,11 +1234,19 @@ def verify_independent_receipt_finality_binding(
                 and receipt_confirmation.network_confirmation_id
                 == rail_confirmation.network_confirmation_id
             )
-            if (
+            ids_conflict = bool(
                 receipt_confirmation
-                and rail_confirmation
+                and comparison_confirmation
+                and (
+                    receipt_confirmation.psp_confirmation_id
+                    != comparison_confirmation.psp_confirmation_id
+                    or receipt_confirmation.network_confirmation_id
+                    != comparison_confirmation.network_confirmation_id
+                )
+            )
+            if (
+                ids_conflict
                 and not rail.evidence_conflict
-                and not ids_match
             ):
                 _append_unique(
                     findings,
@@ -1152,7 +1264,7 @@ def verify_independent_receipt_finality_binding(
                         evidence=[
                             *contract.events,
                             receipt_confirmation.indexed.event,
-                            rail_confirmation.indexed.event,
+                            comparison_confirmation.indexed.event,
                         ],
                     ),
                 )
@@ -1202,11 +1314,19 @@ def verify_independent_receipt_finality_binding(
                     ),
                 )
 
+            late_confirmation_match = bool(
+                receipt_confirmation
+                and rail.confirmation_after_receipt
+                and receipt_confirmation.psp_confirmation_id
+                == rail.confirmation_after_receipt.psp_confirmation_id
+                and receipt_confirmation.network_confirmation_id
+                == rail.confirmation_after_receipt.network_confirmation_id
+            )
             late_support = bool(
                 verified_claim
                 and (
-                    rail.settled_after_receipt is not None
-                    or rail.confirmation_after_receipt is not None
+                    later_finality_status == "settled"
+                    or late_confirmation_match
                 )
             )
             if late_support:
@@ -1227,8 +1347,8 @@ def verify_independent_receipt_finality_binding(
                         evidence=[
                             *contract.events,
                             receipt.status.event,
-                            rail.settled_after_receipt.event
-                            if rail.settled_after_receipt
+                            rail.status_after_receipt.event
+                            if rail.status_after_receipt
                             else None,
                             rail.confirmation_after_receipt.indexed.event
                             if rail.confirmation_after_receipt
