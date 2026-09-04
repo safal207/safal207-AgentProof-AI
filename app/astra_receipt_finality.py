@@ -61,7 +61,9 @@ class _Receipt:
     status_value: str
     identity: Mapping[str, str]
     integrity: _IndexedEvent | None
+    integrity_verified: bool
     confirmation: _Confirmation | None
+    evidence_conflict: bool = False
 
 
 @dataclass(frozen=True)
@@ -143,18 +145,32 @@ def _contract(value: Any) -> tuple[bool, bool]:
     return required, valid
 
 
-def _identity_profile(events: Iterable[StateEvent]) -> tuple[dict[str, str], bool]:
+def _identity_values(event: StateEvent) -> dict[str, str]:
+    return {
+        field: value
+        for field in _IDENTITY_FIELDS
+        if (value := getattr(event, field)) is not None
+    }
+
+
+def _identity_profile(
+    events: Iterable[StateEvent],
+) -> tuple[dict[str, str], bool, bool]:
+    """Return typed identity, conflict-free status, and presence status."""
+
     profile: dict[str, str] = {}
+    present = False
     for event in events:
         for field in _IDENTITY_FIELDS:
             value = getattr(event, field)
             if value is None:
                 continue
+            present = True
             existing = profile.get(field)
             if existing is not None and existing != value:
-                return profile, False
+                return profile, False, True
             profile[field] = value
-    return profile, bool(profile)
+    return profile, True, present
 
 
 def _identity_relation(identity: Mapping[str, str], event: StateEvent) -> str:
@@ -169,6 +185,34 @@ def _identity_relation(identity: Mapping[str, str], event: StateEvent) -> str:
         if observed != expected:
             return "divergent"
     return "matched" if shared else "unresolved"
+
+
+def _shares_equal_typed_identity(
+    identity: Mapping[str, str],
+    event: StateEvent,
+) -> bool:
+    return any(
+        getattr(event, field) is not None
+        and getattr(event, field) == expected
+        for field, expected in identity.items()
+    )
+
+
+def _belongs_to_receipt(
+    event: StateEvent,
+    *,
+    operation_id: str | None,
+    identity: Mapping[str, str],
+) -> bool:
+    if event.operation_id != operation_id:
+        return False
+    if identity:
+        relation = _identity_relation(identity, event)
+        return relation == "matched" or (
+            relation == "divergent"
+            and _shares_equal_typed_identity(identity, event)
+        )
+    return not _identity_values(event)
 
 
 def _confirmation(indexed: _IndexedEvent) -> _Confirmation | None:
@@ -196,6 +240,33 @@ def _no_later_than(candidate: _IndexedEvent, receipt: _IndexedEvent) -> bool:
     if candidate_time is not None and receipt_time is not None:
         return candidate_time <= receipt_time
     return candidate.index <= receipt.index
+
+
+def _chronological(
+    candidates: list[_IndexedEvent],
+) -> list[_IndexedEvent]:
+    if not candidates:
+        return []
+    times = [_epoch(item.event.observed_at) for item in candidates]
+    if all(value is not None for value in times):
+        return [
+            item
+            for _, item in sorted(
+                zip(times, candidates, strict=True),
+                key=lambda pair: (pair[0], pair[1].index),
+            )
+        ]
+    return sorted(candidates, key=lambda item: item.index)
+
+
+def _chronological_confirmations(
+    candidates: list[_Confirmation],
+) -> list[_Confirmation]:
+    if not candidates:
+        return []
+    indexed = _chronological([item.indexed for item in candidates])
+    by_index = {item.indexed.index: item for item in candidates}
+    return [by_index[item.index] for item in indexed]
 
 
 def _finding(
@@ -257,26 +328,21 @@ def _same_receipt_candidates(
     key: str,
     identity: Mapping[str, str],
     authoritative: bool | None = None,
-) -> tuple[list[_IndexedEvent], bool, bool]:
+) -> list[_IndexedEvent]:
     matched: list[_IndexedEvent] = []
-    unresolved = False
-    divergent = False
     for item in indexed:
         event = item.event
         if event.stage != Stage.RECEIPT or event.key != key:
             continue
-        if event.operation_id != anchor.event.operation_id:
-            continue
         if authoritative is not None and event.authoritative is not authoritative:
             continue
-        relation = _identity_relation(identity, event)
-        if relation == "matched":
+        if _belongs_to_receipt(
+            event,
+            operation_id=anchor.event.operation_id,
+            identity=identity,
+        ):
             matched.append(item)
-        elif relation == "unresolved":
-            unresolved = True
-        else:
-            divergent = True
-    return matched, unresolved, divergent
+    return matched
 
 
 def _select_receipt(
@@ -288,20 +354,21 @@ def _select_receipt(
     seen: set[tuple[str, str | None]],
 ) -> _Receipt | None:
     operation_id = anchor.event.operation_id
-    status_anchors = [
+    anchor_identity = _identity_values(anchor.event)
+
+    status_candidates = [
         item
         for item in indexed
         if item.event.stage == Stage.RECEIPT
         and item.event.key in _RECEIPT_STATUS_KEYS
-        and item.event.operation_id == operation_id
-        and _identity_relation(
-            {field: value for field in _IDENTITY_FIELDS if (value := getattr(anchor.event, field)) is not None},
+        and _belongs_to_receipt(
             item.event,
+            operation_id=operation_id,
+            identity=anchor_identity,
         )
-        == "matched"
     ]
-    identity, identity_valid = _identity_profile(
-        item.event for item in status_anchors or [anchor]
+    identity, identity_valid, identity_present = _identity_profile(
+        item.event for item in status_candidates or [anchor]
     )
     if not identity_valid:
         _append_unique(
@@ -317,11 +384,15 @@ def _select_receipt(
                     "typed payment identities."
                 ),
                 operation_id=operation_id,
-                evidence=[*contract.events, *(item.event for item in status_anchors)],
+                evidence=[
+                    *contract.events,
+                    *(item.event for item in status_candidates),
+                ],
             ),
         )
         return None
-    if not identity:
+
+    if not identity_present:
         _append_unique(
             findings,
             seen,
@@ -340,18 +411,6 @@ def _select_receipt(
         )
         identity = {}
 
-    status_candidates = [
-        item
-        for item in indexed
-        if item.event.stage == Stage.RECEIPT
-        and item.event.key in _RECEIPT_STATUS_KEYS
-        and item.event.operation_id == operation_id
-        and (
-            _identity_relation(identity, item.event) == "matched"
-            if identity
-            else item.index == anchor.index
-        )
-    ]
     canonical_statuses = {
         status
         for item in status_candidates
@@ -371,10 +430,14 @@ def _select_receipt(
                     "disagree about success versus failure."
                 ),
                 operation_id=operation_id,
-                evidence=[*contract.events, *(item.event for item in status_candidates)],
+                evidence=[
+                    *contract.events,
+                    *(item.event for item in status_candidates),
+                ],
             ),
         )
         return None
+
     status_value = _canonical_payment_status(anchor.event.value)
     if status_value is None:
         _append_unique(
@@ -395,7 +458,7 @@ def _select_receipt(
         )
         return None
 
-    integrity_candidates, _, _ = _same_receipt_candidates(
+    integrity_candidates = _same_receipt_candidates(
         indexed,
         anchor=anchor,
         key="receipt_integrity_status",
@@ -403,14 +466,18 @@ def _select_receipt(
         authoritative=True,
     )
     integrity_states = {
-        _status(item.event.value)
+        status
         for item in integrity_candidates
-        if _status(item.event.value) is not None
+        if (status := _status(item.event.value)) is not None
     }
     has_verified = bool(integrity_states & _INTEGRITY_VERIFIED)
     has_failed = bool(integrity_states & _INTEGRITY_FAILED)
     integrity: _IndexedEvent | None = None
+    integrity_verified = False
+    evidence_conflict = False
+
     if has_verified and has_failed:
+        evidence_conflict = True
         _append_unique(
             findings,
             seen,
@@ -424,7 +491,10 @@ def _select_receipt(
                     "typed receipt identity."
                 ),
                 operation_id=operation_id,
-                evidence=[*contract.events, *(item.event for item in integrity_candidates)],
+                evidence=[
+                    *contract.events,
+                    *(item.event for item in integrity_candidates),
+                ],
             ),
         )
     elif has_failed:
@@ -437,13 +507,19 @@ def _select_receipt(
                 from_stage=Stage.RECEIPT,
                 to_stage=Stage.RECEIPT,
                 severity="high",
-                explanation="Independent receipt signature/integrity verification failed.",
+                explanation=(
+                    "Independent receipt signature/integrity verification failed."
+                ),
                 operation_id=operation_id,
-                evidence=[*contract.events, *(item.event for item in integrity_candidates)],
+                evidence=[
+                    *contract.events,
+                    *(item.event for item in integrity_candidates),
+                ],
             ),
         )
     elif has_verified:
         integrity = integrity_candidates[-1]
+        integrity_verified = True
     else:
         _append_unique(
             findings,
@@ -462,7 +538,7 @@ def _select_receipt(
             ),
         )
 
-    confirmation_candidates, _, _ = _same_receipt_candidates(
+    confirmation_candidates = _same_receipt_candidates(
         indexed,
         anchor=anchor,
         key="receipt_rail_confirmation",
@@ -484,6 +560,7 @@ def _select_receipt(
             for item in parsed_confirmations
         }
         if len(fingerprints) > 1:
+            evidence_conflict = True
             _append_unique(
                 findings,
                 seen,
@@ -506,7 +583,7 @@ def _select_receipt(
         else:
             confirmation = parsed_confirmations[-1]
 
-    if status_value == "settled" and confirmation is None:
+    if status_value == "settled" and confirmation is None and not evidence_conflict:
         _append_unique(
             findings,
             seen,
@@ -533,7 +610,9 @@ def _select_receipt(
         status_value=status_value,
         identity=identity,
         integrity=integrity,
+        integrity_verified=integrity_verified,
         confirmation=confirmation,
+        evidence_conflict=evidence_conflict,
     )
 
 
@@ -566,16 +645,19 @@ def _select_rail_evidence(
             matched_identity_wrong_operation.append(item)
         elif event.operation_id == operation_id and relation == "unresolved":
             unresolved_statuses.append(item)
-        elif event.operation_id == operation_id and relation == "divergent":
+        elif (
+            event.operation_id == operation_id
+            and relation == "divergent"
+            and _shares_equal_typed_identity(receipt.identity, event)
+        ):
             divergent_statuses.append(item)
 
-    identity_divergent = bool(matched_identity_wrong_operation)
-    identity_unresolved = False
-    if not matching_statuses:
-        if divergent_statuses or matched_identity_wrong_operation:
-            identity_divergent = True
-        elif unresolved_statuses or not receipt.identity:
-            identity_unresolved = True
+    identity_divergent = bool(
+        divergent_statuses or matched_identity_wrong_operation
+    )
+    identity_unresolved = bool(
+        unresolved_statuses or not receipt.identity
+    ) and not matching_statuses
 
     if identity_divergent:
         _append_unique(
@@ -621,24 +703,28 @@ def _select_rail_evidence(
             ),
         )
 
+    usable_statuses = [] if identity_divergent else matching_statuses
     status_before = [
         item
-        for item in matching_statuses
+        for item in usable_statuses
         if _no_later_than(item, receipt.status)
         and _canonical_payment_status(item.event.value) is not None
     ]
     status_after = [
         item
-        for item in matching_statuses
+        for item in usable_statuses
         if not _no_later_than(item, receipt.status)
         and _canonical_payment_status(item.event.value) == "settled"
     ]
-    status_before_receipt = status_before[-1] if status_before else None
-    settled_after_receipt = status_after[0] if status_after else None
+    ordered_before = _chronological(status_before)
+    ordered_after = _chronological(status_after)
+    status_before_receipt = ordered_before[-1] if ordered_before else None
+    settled_after_receipt = ordered_after[0] if ordered_after else None
 
-    confirmation_events: list[_IndexedEvent] = []
+    matching_confirmations: list[_IndexedEvent] = []
     unresolved_confirmations: list[_IndexedEvent] = []
     divergent_confirmations: list[_IndexedEvent] = []
+    matched_confirmation_wrong_operation: list[_IndexedEvent] = []
     for item in indexed:
         event = item.event
         if (
@@ -649,15 +735,77 @@ def _select_rail_evidence(
             continue
         relation = _identity_relation(receipt.identity, event)
         if relation == "matched" and event.operation_id == operation_id:
-            confirmation_events.append(item)
+            matching_confirmations.append(item)
+        elif relation == "matched":
+            matched_confirmation_wrong_operation.append(item)
         elif event.operation_id == operation_id and relation == "unresolved":
             unresolved_confirmations.append(item)
-        elif event.operation_id == operation_id and relation == "divergent":
+        elif (
+            event.operation_id == operation_id
+            and relation == "divergent"
+            and _shares_equal_typed_identity(receipt.identity, event)
+        ):
             divergent_confirmations.append(item)
 
+    confirmation_identity_divergent = bool(
+        divergent_confirmations or matched_confirmation_wrong_operation
+    )
+    confirmation_identity_unresolved = bool(
+        unresolved_confirmations or not receipt.identity
+    ) and not matching_confirmations
+
+    if confirmation_identity_divergent:
+        _append_unique(
+            findings,
+            seen,
+            _finding(
+                code="RECEIPT_SETTLEMENT_IDENTITY_DIVERGENCE",
+                from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                to_stage=Stage.RECEIPT,
+                severity="high",
+                explanation=(
+                    "Authoritative rail-confirmation evidence conflicts with the "
+                    "receipt's typed payment identity or operation binding."
+                ),
+                operation_id=operation_id,
+                evidence=[
+                    *contract.events,
+                    receipt.status.event,
+                    *(item.event for item in divergent_confirmations),
+                    *(item.event for item in matched_confirmation_wrong_operation),
+                ],
+            ),
+        )
+    elif confirmation_identity_unresolved:
+        _append_unique(
+            findings,
+            seen,
+            _finding(
+                code="RECEIPT_SETTLEMENT_IDENTITY_UNRESOLVED",
+                from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                to_stage=Stage.RECEIPT,
+                severity="medium",
+                explanation=(
+                    "Rail-confirmation evidence cannot be tied to the receipt "
+                    "through a common typed payment identity and operation."
+                ),
+                operation_id=operation_id,
+                evidence=[
+                    *contract.events,
+                    receipt.status.event,
+                    *(item.event for item in unresolved_confirmations),
+                ],
+            ),
+        )
+
+    usable_confirmation_events = (
+        []
+        if confirmation_identity_divergent
+        else matching_confirmations
+    )
     parsed = [
         confirmation
-        for item in confirmation_events
+        for item in usable_confirmation_events
         if (confirmation := _confirmation(item)) is not None
     ]
     evidence_conflict = False
@@ -692,28 +840,46 @@ def _select_rail_evidence(
                 ),
             )
 
-    confirmation_before = [
-        item
-        for item in parsed
-        if _no_later_than(item.indexed, receipt.status)
-    ]
-    confirmation_after = [
-        item
-        for item in parsed
-        if not _no_later_than(item.indexed, receipt.status)
-    ]
+    if evidence_conflict:
+        confirmation_before_receipt = None
+        confirmation_after_receipt = None
+    else:
+        confirmation_before = [
+            item
+            for item in parsed
+            if _no_later_than(item.indexed, receipt.status)
+        ]
+        confirmation_after = [
+            item
+            for item in parsed
+            if not _no_later_than(item.indexed, receipt.status)
+        ]
+        ordered_confirmation_before = _chronological_confirmations(
+            confirmation_before
+        )
+        ordered_confirmation_after = _chronological_confirmations(
+            confirmation_after
+        )
+        confirmation_before_receipt = (
+            ordered_confirmation_before[-1]
+            if ordered_confirmation_before
+            else None
+        )
+        confirmation_after_receipt = (
+            ordered_confirmation_after[0]
+            if ordered_confirmation_after
+            else None
+        )
 
     return _RailSelection(
         status_before_receipt=status_before_receipt,
         settled_after_receipt=settled_after_receipt,
-        confirmation_before_receipt=(
-            confirmation_before[-1] if confirmation_before else None
-        ),
-        confirmation_after_receipt=(
-            confirmation_after[0] if confirmation_after else None
-        ),
-        identity_unresolved=identity_unresolved or bool(unresolved_confirmations),
-        identity_divergent=identity_divergent or bool(divergent_confirmations),
+        confirmation_before_receipt=confirmation_before_receipt,
+        confirmation_after_receipt=confirmation_after_receipt,
+        identity_unresolved=identity_unresolved
+        or confirmation_identity_unresolved,
+        identity_divergent=identity_divergent
+        or confirmation_identity_divergent,
         evidence_conflict=evidence_conflict,
     )
 
@@ -730,7 +896,10 @@ def verify_independent_receipt_finality_binding(
     operation existed no later than receipt issuance.
     """
 
-    indexed = [_IndexedEvent(index, event) for index, event in enumerate(events)]
+    indexed = [
+        _IndexedEvent(index, event)
+        for index, event in enumerate(events)
+    ]
     findings: list[Finding] = []
     seen: set[tuple[str, str | None]] = set()
 
@@ -770,6 +939,9 @@ def verify_independent_receipt_finality_binding(
             continue
         contract_groups.setdefault(event.operation_id, []).append(event)
 
+    if None in invalid_contracts:
+        return findings
+
     contracts = {
         operation_id: _Contract(events=tuple(group))
         for operation_id, group in contract_groups.items()
@@ -784,21 +956,18 @@ def verify_independent_receipt_finality_binding(
         if item.event.stage == Stage.RECEIPT
         and item.event.key in _RECEIPT_STATUS_KEYS
     ]
-    operations = {
+    operations = set(contracts)
+    operations.update(
         item.event.operation_id
         for item in receipt_statuses
         if _applicable_contract(contracts, item.event.operation_id) is not None
-    }
-    operations.update(
-        operation_id for operation_id in contracts if operation_id is not None
     )
-    if None in contracts and any(
-        item.event.operation_id is None for item in receipt_statuses
-    ):
-        operations.add(None)
 
     processed_identities: set[
-        tuple[str | None, tuple[tuple[str, str], ...] | tuple[str, int]]
+        tuple[
+            str | None,
+            tuple[tuple[str, str], ...] | tuple[str, int],
+        ]
     ] = set()
 
     for operation_id in sorted(
@@ -835,10 +1004,13 @@ def verify_independent_receipt_finality_binding(
             continue
 
         for anchor in anchors:
-            identity, identity_valid = _identity_profile([anchor.event])
-            identity_key: tuple[tuple[str, str], ...] | tuple[str, int]
-            if identity_valid and identity:
-                identity_key = tuple(sorted(identity.items()))
+            anchor_identity = _identity_values(anchor.event)
+            identity_key: (
+                tuple[tuple[str, str], ...]
+                | tuple[str, int]
+            )
+            if anchor_identity:
+                identity_key = tuple(sorted(anchor_identity.items()))
             else:
                 identity_key = ("event_index", anchor.index)
             process_key = (operation_id, identity_key)
@@ -919,7 +1091,11 @@ def verify_independent_receipt_finality_binding(
 
             receipt_confirmation = receipt.confirmation
             rail_confirmation = rail.confirmation_before_receipt
-            if rail_confirmation is None and not rail.evidence_conflict:
+            if (
+                rail_confirmation is None
+                and not rail.evidence_conflict
+                and not receipt.evidence_conflict
+            ):
                 _append_unique(
                     findings,
                     seen,
@@ -946,33 +1122,40 @@ def verify_independent_receipt_finality_binding(
                     ),
                 )
 
-            if receipt_confirmation and rail_confirmation:
-                if (
-                    receipt_confirmation.psp_confirmation_id
-                    != rail_confirmation.psp_confirmation_id
-                    or receipt_confirmation.network_confirmation_id
-                    != rail_confirmation.network_confirmation_id
-                ):
-                    _append_unique(
-                        findings,
-                        seen,
-                        _finding(
-                            code="RECEIPT_CONFIRMATION_ID_MISMATCH",
-                            from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
-                            to_stage=Stage.RECEIPT,
-                            severity="high",
-                            explanation=(
-                                "Receipt PSP/network confirmation IDs do not match "
-                                "the authoritative rail confirmation record."
-                            ),
-                            operation_id=operation_id,
-                            evidence=[
-                                *contract.events,
-                                receipt_confirmation.indexed.event,
-                                rail_confirmation.indexed.event,
-                            ],
+            ids_match = bool(
+                receipt_confirmation
+                and rail_confirmation
+                and receipt_confirmation.psp_confirmation_id
+                == rail_confirmation.psp_confirmation_id
+                and receipt_confirmation.network_confirmation_id
+                == rail_confirmation.network_confirmation_id
+            )
+            if (
+                receipt_confirmation
+                and rail_confirmation
+                and not rail.evidence_conflict
+                and not ids_match
+            ):
+                _append_unique(
+                    findings,
+                    seen,
+                    _finding(
+                        code="RECEIPT_CONFIRMATION_ID_MISMATCH",
+                        from_stage=Stage.ACTUAL_SETTLEMENT_FINALITY,
+                        to_stage=Stage.RECEIPT,
+                        severity="high",
+                        explanation=(
+                            "Receipt PSP/network confirmation IDs do not match "
+                            "the authoritative rail confirmation record."
                         ),
-                    )
+                        operation_id=operation_id,
+                        evidence=[
+                            *contract.events,
+                            receipt_confirmation.indexed.event,
+                            rail_confirmation.indexed.event,
+                        ],
+                    ),
+                )
 
             verified_claim = bool(
                 receipt_confirmation
@@ -980,14 +1163,12 @@ def verify_independent_receipt_finality_binding(
             )
             independent_support = bool(
                 finality_status == "settled"
-                and receipt_confirmation is not None
-                and rail_confirmation is not None
-                and receipt_confirmation.psp_confirmation_id
-                == rail_confirmation.psp_confirmation_id
-                and receipt_confirmation.network_confirmation_id
-                == rail_confirmation.network_confirmation_id
-                and receipt.integrity is not None
+                and ids_match
+                and receipt.integrity_verified
+                and not receipt.evidence_conflict
                 and not rail.evidence_conflict
+                and not rail.identity_unresolved
+                and not rail.identity_divergent
             )
 
             if verified_claim and not independent_support:
