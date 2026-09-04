@@ -1,0 +1,99 @@
+{
+  "trace_id": "astra-ap2-receipt-id-mismatch-005",
+  "protocol": "ap2/payment-receipt",
+  "scenario": "The rail settled the same payment before receipt issuance, but the signed receipt carries PSP/network confirmation IDs that do not match the authoritative rail record.",
+  "expected_codes": [
+    "RECEIPT_CONFIRMATION_ID_MISMATCH"
+  ],
+  "expected_verdict": "DIVERGED",
+  "events": [
+    {
+      "stage": "POLICY DECISION",
+      "key": "requires_independent_receipt_finality_binding",
+      "value": {
+        "required": true,
+        "success_requires_settled_finality": true,
+        "verified_flag_is_claim_only": true
+      },
+      "source": "astra-receipt-finality-contract",
+      "operation_id": "ap2-payment-005"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-psp-network-resolver",
+      "authoritative": true,
+      "operation_id": "ap2-payment-005",
+      "authorization_id": "mandate-005",
+      "payment_id": "payment-005",
+      "observed_at": "2026-08-17T14:59:50Z"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "rail_confirmation",
+      "value": {
+        "psp_confirmation_id": "psp-actual-005",
+        "network_confirmation_id": "network-actual-005"
+      },
+      "source": "independent-psp-network-resolver",
+      "authoritative": true,
+      "operation_id": "ap2-payment-005",
+      "authorization_id": "mandate-005",
+      "payment_id": "payment-005",
+      "observed_at": "2026-08-17T14:59:51Z"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_integrity_status",
+      "value": "verified",
+      "source": "independent-jws-verifier",
+      "authoritative": true,
+      "operation_id": "ap2-payment-005",
+      "authorization_id": "mandate-005",
+      "payment_id": "payment-005",
+      "observed_at": "2026-08-17T15:00:00Z"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_status",
+      "value": "Success",
+      "source": "ap2-payment-receipt",
+      "operation_id": "ap2-payment-005",
+      "authorization_id": "mandate-005",
+      "payment_id": "payment-005",
+      "observed_at": "2026-08-17T15:00:00Z"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_rail_confirmation",
+      "value": {
+        "psp_confirmation_id": "psp-claimed-005",
+        "network_confirmation_id": "network-claimed-005",
+        "rail_confirmation_verified": false
+      },
+      "source": "ap2-payment-receipt",
+      "operation_id": "ap2-payment-005",
+      "authorization_id": "mandate-005",
+      "payment_id": "payment-005",
+      "observed_at": "2026-08-17T15:00:00Z"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "merchant-service",
+      "operation_id": "ap2-payment-005",
+      "payment_id": "payment-005"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "complete",
+      "source": "operation-ledger",
+      "authoritative": true,
+      "operation_id": "ap2-payment-005",
+      "payment_id": "payment-005"
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "trace_id": "astra-ap2-receipt-finality-conflict-004",
+  "protocol": "ap2/payment-receipt",
+  "scenario": "A cryptographically valid AP2 receipt claims Success, but authoritative rail evidence for the same payment is failed before receipt issuance.",
+  "expected_codes": [
+    "RECEIPT_SUCCESS_FINALITY_CONFLICT"
+  ],
+  "expected_verdict": "DIVERGED",
+  "events": [
+    {
+      "stage": "POLICY DECISION",
+      "key": "requires_independent_receipt_finality_binding",
+      "value": {
+        "required": true,
+        "success_requires_settled_finality": true,
+        "verified_flag_is_claim_only": true
+      },
+      "source": "astra-receipt-finality-contract",
+      "operation_id": "ap2-payment-004"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "failed",
+      "source": "independent-psp-network-resolver",
+      "authoritative": true,
+      "operation_id": "ap2-payment-004",
+      "authorization_id": "mandate-004",
+      "payment_id": "payment-004",
+      "observed_at": "2026-08-17T13:59:50Z"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "rail_confirmation",
+      "value": {
+        "psp_confirmation_id": "psp-failed-004",
+        "network_confirmation_id": "network-failed-004"
+      },
+      "source": "independent-psp-network-resolver",
+      "authoritative": true,
+      "operation_id": "ap2-payment-004",
+      "authorization_id": "mandate-004",
+      "payment_id": "payment-004",
+      "observed_at": "2026-08-17T13:59:51Z"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_integrity_status",
+      "value": "verified",
+      "source": "independent-jws-verifier",
+      "authoritative": true,
+      "operation_id": "ap2-payment-004",
+      "authorization_id": "mandate-004",
+      "payment_id": "payment-004",
+      "observed_at": "2026-08-17T14:00:00Z"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_status",
+      "value": "Success",
+      "source": "ap2-payment-receipt",
+      "operation_id": "ap2-payment-004",
+      "authorization_id": "mandate-004",
+      "payment_id": "payment-004",
+      "observed_at": "2026-08-17T14:00:00Z"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_rail_confirmation",
+      "value": {
+        "psp_confirmation_id": "psp-failed-004",
+        "network_confirmation_id": "network-failed-004",
+        "rail_confirmation_verified": false
+      },
+      "source": "ap2-payment-receipt",
+      "operation_id": "ap2-payment-004",
+      "authorization_id": "mandate-004",
+      "payment_id": "payment-004",
+      "observed_at": "2026-08-17T14:00:00Z"
+    }
+  ]
+}

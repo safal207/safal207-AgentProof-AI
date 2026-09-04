@@ -1,0 +1,59 @@
+{
+  "trace_id": "astra-ap2-receipt-verified-flag-002",
+  "protocol": "ap2/payment-receipt",
+  "scenario": "A signed AP2 Success receipt carries caller-supplied confirmation IDs and rail_confirmation_verified=true, but the trace contains no independent PSP/network evidence.",
+  "expected_codes": [
+    "RECEIPT_RAIL_CONFIRMATION_EVIDENCE_MISSING",
+    "RECEIPT_RAIL_VERIFICATION_CLAIM_UNSUPPORTED",
+    "RECEIPT_SUCCESS_WITHOUT_VERIFIED_FINALITY"
+  ],
+  "expected_verdict": "UNRESOLVED",
+  "events": [
+    {
+      "stage": "POLICY DECISION",
+      "key": "requires_independent_receipt_finality_binding",
+      "value": {
+        "required": true,
+        "success_requires_settled_finality": true,
+        "verified_flag_is_claim_only": true
+      },
+      "source": "astra-receipt-finality-contract",
+      "operation_id": "ap2-payment-002"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_integrity_status",
+      "value": "verified",
+      "source": "independent-jws-verifier",
+      "authoritative": true,
+      "operation_id": "ap2-payment-002",
+      "authorization_id": "mandate-002",
+      "payment_id": "payment-002",
+      "observed_at": "2026-08-17T13:00:00Z"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_status",
+      "value": "Success",
+      "source": "ap2-payment-receipt",
+      "operation_id": "ap2-payment-002",
+      "authorization_id": "mandate-002",
+      "payment_id": "payment-002",
+      "observed_at": "2026-08-17T13:00:00Z"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_rail_confirmation",
+      "value": {
+        "psp_confirmation_id": "psp-caller-002",
+        "network_confirmation_id": "network-caller-002",
+        "rail_confirmation_verified": true
+      },
+      "source": "ap2-payment-receipt",
+      "operation_id": "ap2-payment-002",
+      "authorization_id": "mandate-002",
+      "payment_id": "payment-002",
+      "observed_at": "2026-08-17T13:00:00Z"
+    }
+  ]
+}

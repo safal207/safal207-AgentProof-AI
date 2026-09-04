@@ -1,0 +1,66 @@
+{
+  "trace_id": "astra-ap2-receipt-generated-ids-001",
+  "protocol": "ap2/payment-receipt",
+  "scenario": "An AP2 PaymentReceipt is cryptographically valid and claims Success with locally generated PSP/network confirmation IDs, but no independent rail lookup or finality evidence exists.",
+  "expected_codes": [
+    "RECEIPT_RAIL_CONFIRMATION_EVIDENCE_MISSING",
+    "RECEIPT_SUCCESS_WITHOUT_VERIFIED_FINALITY"
+  ],
+  "expected_verdict": "UNRESOLVED",
+  "events": [
+    {
+      "stage": "POLICY DECISION",
+      "key": "requires_independent_receipt_finality_binding",
+      "value": {
+        "required": true,
+        "success_requires_settled_finality": true,
+        "verified_flag_is_claim_only": true
+      },
+      "source": "astra-receipt-finality-contract",
+      "operation_id": "ap2-payment-001"
+    },
+    {
+      "stage": "MANDATE/AUTHORIZATION",
+      "key": "mandate_status",
+      "value": "verified",
+      "source": "ap2-mandate-verifier",
+      "operation_id": "ap2-payment-001",
+      "authorization_id": "mandate-001"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_integrity_status",
+      "value": "verified",
+      "source": "independent-jws-verifier",
+      "authoritative": true,
+      "operation_id": "ap2-payment-001",
+      "authorization_id": "mandate-001",
+      "payment_id": "generated-payment-uuid-001",
+      "observed_at": "2026-08-10T12:00:00Z"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_status",
+      "value": "Success",
+      "source": "ap2-payment-receipt",
+      "operation_id": "ap2-payment-001",
+      "authorization_id": "mandate-001",
+      "payment_id": "generated-payment-uuid-001",
+      "observed_at": "2026-08-10T12:00:00Z"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_rail_confirmation",
+      "value": {
+        "psp_confirmation_id": "generated-payment-uuid-001",
+        "network_confirmation_id": "generated-payment-uuid-001",
+        "rail_confirmation_verified": false
+      },
+      "source": "ap2-payment-receipt",
+      "operation_id": "ap2-payment-001",
+      "authorization_id": "mandate-001",
+      "payment_id": "generated-payment-uuid-001",
+      "observed_at": "2026-08-10T12:00:00Z"
+    }
+  ]
+}
