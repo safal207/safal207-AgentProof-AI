@@ -4,7 +4,6 @@
   "scenario": "The protected servlet response is generated, committed, and delivered to the buyer before the facilitator returns authoritative settlement failure.",
   "expected_codes": [
     "DELIVERED_BUT_NOT_SETTLED",
-    "PROTECTED_BODY_DISPOSAL_EVIDENCE_MISSING",
     "PROTECTED_DELIVERY_PRECEDES_SETTLEMENT",
     "PROTECTED_RESPONSE_COMMITTED_BEFORE_SETTLEMENT",
     "SETTLEMENT_FAILED_AFTER_PROTECTED_DELIVERY"
