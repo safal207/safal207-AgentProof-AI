@@ -1,0 +1,125 @@
+{
+  "trace_id": "astra-x402-java-buffered-failure-004",
+  "protocol": "x402-java/PaymentFilter",
+  "scenario": "The protected servlet body remains buffered, settlement fails, the body is discarded, and only an unprotected 402 error response is returned.",
+  "expected_codes": [],
+  "expected_verdict": "VERIFIED",
+  "events": [
+    {
+      "stage": "REQUEST",
+      "key": "business_obligation",
+      "value": "one_premium_servlet_response",
+      "source": "embedded-jetty-regression",
+      "operation_id": "java-filter-call-004"
+    },
+    {
+      "stage": "POLICY DECISION",
+      "key": "requires_settlement_gated_delivery",
+      "value": {
+        "required": true,
+        "protected_body_must_remain_discardable_until_settled": true,
+        "implementation_provenance_required": true
+      },
+      "source": "astra-settlement-gate-contract",
+      "operation_id": "java-filter-call-004"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "implementation_artifact",
+      "value": {
+        "language": "java",
+        "artifact": "org.x402:x402 PaymentFilter",
+        "commit": "5df361d591fd3df74eb363296347b2ed57e8f413"
+      },
+      "source": "x402-main-build-manifest",
+      "authoritative": true,
+      "operation_id": "java-filter-call-004"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "payment_header_received",
+      "source": "PaymentFilter",
+      "operation_id": "java-filter-call-004",
+      "attempt_id": "java-attempt-004",
+      "authorization_id": "java-auth-004",
+      "payment_id": "java-payment-004",
+      "observed_at": "2026-09-04T09:30:00Z"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_verification_status",
+      "value": "verified",
+      "source": "facilitator-verify",
+      "operation_id": "java-filter-call-004",
+      "attempt_id": "java-attempt-004",
+      "authorization_id": "java-auth-004",
+      "payment_id": "java-payment-004",
+      "observed_at": "2026-09-04T09:30:01Z"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "protected_response_state",
+      "value": "generated",
+      "source": "premium-servlet-handler",
+      "operation_id": "java-filter-call-004",
+      "attempt_id": "java-attempt-004",
+      "authorization_id": "java-auth-004",
+      "payment_id": "java-payment-004",
+      "observed_at": "2026-09-04T09:30:02Z"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "protected_response_state",
+      "value": "buffered",
+      "source": "BufferingHttpServletResponseWrapper",
+      "operation_id": "java-filter-call-004",
+      "attempt_id": "java-attempt-004",
+      "authorization_id": "java-auth-004",
+      "payment_id": "java-payment-004",
+      "observed_at": "2026-09-04T09:30:03Z"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "failed",
+      "source": "facilitator-settle",
+      "authoritative": true,
+      "operation_id": "java-filter-call-004",
+      "attempt_id": "java-attempt-004",
+      "authorization_id": "java-auth-004",
+      "payment_id": "java-payment-004",
+      "observed_at": "2026-09-04T09:30:04Z"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "protected_response_state",
+      "value": "discarded",
+      "source": "PaymentFilter",
+      "authoritative": true,
+      "operation_id": "java-filter-call-004",
+      "attempt_id": "java-attempt-004",
+      "authorization_id": "java-auth-004",
+      "payment_id": "java-payment-004",
+      "observed_at": "2026-09-04T09:30:05Z"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "error_response_status",
+      "value": "http_402_delivered",
+      "source": "PaymentFilter.respond402",
+      "operation_id": "java-filter-call-004",
+      "attempt_id": "java-attempt-004",
+      "observed_at": "2026-09-04T09:30:06Z"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "closed",
+      "source": "operation-ledger",
+      "authoritative": true,
+      "operation_id": "java-filter-call-004",
+      "payment_id": "java-payment-004"
+    }
+  ]
+}

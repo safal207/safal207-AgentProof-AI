@@ -1,0 +1,134 @@
+{
+  "trace_id": "astra-x402-java-buffered-success-003",
+  "protocol": "x402-java/PaymentFilter",
+  "scenario": "The protected servlet body is generated into a private buffer, authoritative settlement succeeds, and only then is the body flushed and delivered once.",
+  "expected_codes": [],
+  "expected_verdict": "VERIFIED",
+  "events": [
+    {
+      "stage": "REQUEST",
+      "key": "business_obligation",
+      "value": "one_premium_servlet_response",
+      "source": "embedded-jetty-regression",
+      "operation_id": "java-filter-call-003"
+    },
+    {
+      "stage": "POLICY DECISION",
+      "key": "requires_settlement_gated_delivery",
+      "value": {
+        "required": true,
+        "protected_body_must_remain_discardable_until_settled": true,
+        "implementation_provenance_required": true
+      },
+      "source": "astra-settlement-gate-contract",
+      "operation_id": "java-filter-call-003"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "implementation_artifact",
+      "value": {
+        "language": "java",
+        "artifact": "org.x402:x402 PaymentFilter",
+        "commit": "5df361d591fd3df74eb363296347b2ed57e8f413"
+      },
+      "source": "x402-main-build-manifest",
+      "authoritative": true,
+      "operation_id": "java-filter-call-003"
+    },
+    {
+      "stage": "PAYMENT ATTEMPT",
+      "key": "attempt",
+      "value": "payment_header_received",
+      "source": "PaymentFilter",
+      "operation_id": "java-filter-call-003",
+      "attempt_id": "java-attempt-003",
+      "authorization_id": "java-auth-003",
+      "payment_id": "java-payment-003",
+      "observed_at": "2026-09-04T09:20:00Z"
+    },
+    {
+      "stage": "CLAIMED RESULT",
+      "key": "payment_verification_status",
+      "value": "verified",
+      "source": "facilitator-verify",
+      "operation_id": "java-filter-call-003",
+      "attempt_id": "java-attempt-003",
+      "authorization_id": "java-auth-003",
+      "payment_id": "java-payment-003",
+      "observed_at": "2026-09-04T09:20:01Z"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "protected_response_state",
+      "value": "generated",
+      "source": "premium-servlet-handler",
+      "operation_id": "java-filter-call-003",
+      "attempt_id": "java-attempt-003",
+      "authorization_id": "java-auth-003",
+      "payment_id": "java-payment-003",
+      "observed_at": "2026-09-04T09:20:02Z"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "protected_response_state",
+      "value": "buffered",
+      "source": "BufferingHttpServletResponseWrapper",
+      "operation_id": "java-filter-call-003",
+      "attempt_id": "java-attempt-003",
+      "authorization_id": "java-auth-003",
+      "payment_id": "java-payment-003",
+      "observed_at": "2026-09-04T09:20:03Z"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "facilitator-settle",
+      "authoritative": true,
+      "operation_id": "java-filter-call-003",
+      "attempt_id": "java-attempt-003",
+      "authorization_id": "java-auth-003",
+      "payment_id": "java-payment-003",
+      "observed_at": "2026-09-04T09:20:04Z"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "protected_response_state",
+      "value": "flushed",
+      "source": "PaymentFilter.flushBuffered",
+      "operation_id": "java-filter-call-003",
+      "attempt_id": "java-attempt-003",
+      "authorization_id": "java-auth-003",
+      "payment_id": "java-payment-003",
+      "observed_at": "2026-09-04T09:20:05Z"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "X-PAYMENT-RESPONSE",
+      "operation_id": "java-filter-call-003",
+      "payment_id": "java-payment-003"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "embedded-jetty-client",
+      "operation_id": "java-filter-call-003",
+      "attempt_id": "java-attempt-003",
+      "authorization_id": "java-auth-003",
+      "payment_id": "java-payment-003",
+      "observed_at": "2026-09-04T09:20:05.100000Z"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "complete",
+      "source": "operation-ledger",
+      "authoritative": true,
+      "operation_id": "java-filter-call-003",
+      "payment_id": "java-payment-003"
+    }
+  ]
+}
