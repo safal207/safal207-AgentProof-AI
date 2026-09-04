@@ -55,7 +55,7 @@ PAYMENT ATTEMPT
 > matching authoritative settled event that already existed at that decision
 > point.
 
-This separates three events that middleware often collapses:
+Three middleware events remain distinct:
 
 ```text
 handler executed
@@ -63,7 +63,7 @@ handler executed
 != protected body became visible to the client
 ```
 
-It also keeps payment verification separate from finality:
+Payment admission and finality also remain distinct:
 
 ```text
 verify accepted
@@ -87,8 +87,11 @@ verify accepted
 
 `implementation_provenance_required` is optional. When enabled, the trace must
 include an authoritative `implementation_artifact` record naming the language,
-artifact, and either a revision/commit or version. Provenance identifies what was
-tested; it never proves conformance merely because a version string looks new.
+artifact, and either a revision/commit or version. A global requirement is a
+minimum for every operation; an operation-specific contract cannot weaken it.
+
+Provenance identifies what was tested. It never proves conformance merely
+because a version string looks new.
 
 ## Evidence vocabulary
 
@@ -116,31 +119,15 @@ tested; it never proves conformance merely because a version string looks new.
 }
 ```
 
-Private states:
-
-- `generated`;
-- `buffered`;
-- `held`;
-- `private`;
-- `staged`.
-
-Public states:
-
-- `committed`;
-- `flushed`;
-- `published`;
-- `client_visible`.
-
-Safe post-failure states:
-
-- `discarded`;
-- `invalidated`;
-- `revoked`;
-- `absent`.
+Private states include `generated`, `buffered`, `held`, `private`, and `staged`.
+Public states include `committed`, `flushed`, `published`, and `client_visible`.
+Safe terminal failure states include `discarded`, `invalidated`, `revoked`, and
+`absent`.
 
 A retained `buffered`, `generated`, `held`, `staged`, `active`, or `retained`
-state after failed settlement is not automatically a leak, but it remains
-reusable protected material and is reported as a high-severity gate failure.
+state after failed settlement is not itself proof that bytes leaked, but it
+leaves protected material reusable and is reported as a high-severity gate
+failure.
 
 ### Finality
 
@@ -155,8 +142,9 @@ reusable protected material and is reported as a high-severity gate failure.
 }
 ```
 
-Only authoritative terminal evidence closes the gate. Unknown, pending, or
-missing finality cannot authorize public delivery.
+Only authoritative terminal evidence closes the gate. A verified payment whose
+protected body remains private but whose finality is absent remains
+`UNRESOLVED`; it is not promoted to a completed safe lifecycle.
 
 ### Protected delivery
 
@@ -170,8 +158,8 @@ missing finality cannot authorize public delivery.
 }
 ```
 
-An HTTP 402 or other unprotected error response should use a different key, such
-as `error_response_status`; it is not the protected business outcome.
+An HTTP 402 or another unprotected error response uses a different key, such as
+`error_response_status`, and is not treated as protected business delivery.
 
 ### Implementation provenance
 
@@ -189,47 +177,54 @@ as `error_response_status`; it is not the protected business outcome.
 }
 ```
 
-This is build/test provenance, not behavioral authority. A deployed package can
-be tested even when its public release cadence differs from repository `main`.
-
-## Identity binding
+## Identity and attempt isolation
 
 Settlement, response state, and delivery are matched through typed
 `authorization_id` and `payment_id`. Equal text in different fields is not a
 cross-field match. `attempt_id` may correlate transport evidence, but
 attempt-only correlation remains `UNRESOLVED` for economic identity.
 
-The `operation_id` must also match. A settlement from another payment or another
-business operation cannot authorize the protected response.
+A fresh payment attempt with different typed identifiers is not a conflict just
+because it belongs to the same business operation. It is evaluated separately.
+A divergence requires either:
 
-## Temporal rule
+- one typed identifier matches while another conflicts; or
+- the same `attempt_id` is reused with conflicting typed payment identity.
 
-Ordering is evaluated with `observed_at` when both compared events expose
-absolute time; otherwise trace order is used.
+This prevents a safe recovery attempt from being mistaken for identity
+corruption while still failing closed on partial-ID crossover.
+
+## Temporal and disposal rules
+
+Ordering uses `observed_at` when all compared events expose usable absolute
+timestamps; otherwise it uses trace order.
 
 ```text
 protected delivery
 -> settlement succeeds later
 ```
 
-This is still a gate violation. Eventual payment can close the economic balance,
-but it cannot retroactively make the earlier disclosure settlement-gated.
+This remains a gate violation. Eventual payment may balance the economics but
+cannot retroactively authorize an earlier disclosure.
 
 ```text
 protected delivery
 -> settlement fails later
 ```
 
-This is critical: content was public before the system learned that payment had
-not settled.
+This is critical: the protected response was public before the system learned
+that payment had failed.
 
 ```text
 settlement fails
--> protected body is flushed or delivered
+-> protected body remains private
 ```
 
-This is also critical, but it is classified separately as protected delivery
-with already-failed settlement.
+The trace must show disposal or a later settlement before publication. If the
+body was already public, Astra reports the stronger commit/delivery violations
+and does not add a redundant disposal finding for an irreversible disclosure.
+If settlement later succeeds before any publication, the staged body may be
+released without a redundant discard step.
 
 ## Findings
 
@@ -237,16 +232,17 @@ with already-failed settlement.
 |---|---|
 | `SETTLEMENT_GATED_DELIVERY_CONTRACT_INVALID` | The contract does not explicitly require discardable protected output until settlement. |
 | `PAYMENT_VERIFICATION_EVIDENCE_MISSING` | No successful verification event is supplied. |
+| `SETTLEMENT_GATE_FINALITY_EVIDENCE_MISSING` | Verification exists but no matching authoritative terminal finality or public decision is present. |
 | `SETTLEMENT_GATE_IMPLEMENTATION_PROVENANCE_MISSING` | Required authoritative build provenance is absent or incomplete. |
 | `SETTLEMENT_GATE_IDENTITY_UNRESOLVED` | Evidence is correlated only weakly, such as by attempt ID without typed payment identity. |
-| `SETTLEMENT_GATE_IDENTITY_DIVERGENCE` | Settlement or response evidence conflicts with the verified payment identity. |
+| `SETTLEMENT_GATE_IDENTITY_DIVERGENCE` | Evidence partially matches or reuses an attempt while conflicting on typed payment identity. |
 | `PROTECTED_RESPONSE_GATE_EVIDENCE_MISSING` | The trace does not show whether protected output was buffered, committed, flushed, or discarded. |
 | `PROTECTED_RESPONSE_COMMITTED_BEFORE_SETTLEMENT` | Protected output was committed or flushed before authoritative settlement success. |
 | `PROTECTED_DELIVERY_PRECEDES_SETTLEMENT` | The protected business outcome reached the client before settlement success. |
 | `SETTLEMENT_FAILED_AFTER_PROTECTED_DELIVERY` | Settlement failed after the protected response was already public. |
 | `PROTECTED_DELIVERY_WITH_FAILED_SETTLEMENT` | Protected output became public despite an already-failed settlement. |
 | `PROTECTED_DELIVERY_FINALITY_UNRESOLVED` | Protected output became public and no matching terminal finality is available. |
-| `PROTECTED_BODY_DISPOSAL_EVIDENCE_MISSING` | A private body existed at settlement failure, but disposal/non-public state is not proven. |
+| `PROTECTED_BODY_DISPOSAL_EVIDENCE_MISSING` | A private body existed at terminal failure, but disposal/non-public resolution is not proven. |
 | `PROTECTED_BODY_NOT_DISCARDED_AFTER_SETTLEMENT_FAILURE` | Protected output remained staged or reusable after failed settlement. |
 
 The generic Astra core may additionally emit `DELIVERED_BUT_NOT_SETTLED` when a
@@ -267,15 +263,21 @@ client receives premium body
 settlement fails
 ```
 
-This mirrors the public issue and integration-test reproduction. It does not
-claim every servlet container behaved identically for every response shape.
+Expected gate findings:
+
+- `PROTECTED_RESPONSE_COMMITTED_BEFORE_SETTLEMENT`;
+- `PROTECTED_DELIVERY_PRECEDES_SETTLEMENT`;
+- `SETTLEMENT_FAILED_AFTER_PROTECTED_DELIVERY`.
+
+The generic core additionally emits `DELIVERED_BUT_NOT_SETTLED`. No disposal
+finding is added after an already public leak.
 
 ### Delivery before eventual settlement — divergent
 
 `x402_java_delivery_before_late_settlement.json`
 
-The same payment eventually settles, but protected content was visible first.
-Astra reports ordering failure without calling it unpaid delivery.
+The payment eventually settles, but protected content was visible first. Astra
+reports ordering failure without calling it unpaid delivery.
 
 ### Buffered success — verified
 
@@ -308,20 +310,20 @@ contains the buffering repair. This profile does not infer that a deployed jar i
 fixed or vulnerable from its version label; it records and tests the actual
 artifact revision.
 
-The module also does not require every merchant to execute business logic before
-settlement. It permits that architecture when all protected output and side
-effects remain private, reversible, and non-delivered until finality.
+The module does not require every merchant to execute business logic before
+settlement. It permits that architecture when protected output remains private,
+discardable, and non-delivered until finality.
 
 ## Commercial boundary
 
 This becomes an Astra merchant-middleware assessment for:
 
 - Java servlet filters;
-- Express/Hono/Next middleware;
+- Express, Hono, and Next middleware;
 - API gateways;
 - streaming and inference responses;
 - paid content systems;
 - facilitator-integrated resource servers.
 
 The deliverable is a cross-SDK red/green trace proving whether a protected body
-can escape before the payment rail has granted economic authority to release it.
+can escape before the payment rail grants economic authority to publish it.
