@@ -9,6 +9,7 @@ from .astra_delivery_authority import verify_finality_bound_delivery_authority
 from .astra_fulfillment import verify_provider_fulfillment_outcome
 from .astra_multileg import verify_multileg_causal_outcome
 from .astra_origin import verify_payment_credential_origin
+from .astra_receipt_finality import verify_independent_receipt_finality_binding
 from .astra_retry import verify_indeterminate_retry_outcome
 from .astra_session import verify_payment_session_principal_binding
 from .astra_session_accounting import verify_payment_session_accounting
@@ -86,6 +87,7 @@ def verify_causal_economic_outcome(
         *verify_payment_session_principal_binding(materialized),
         *verify_payment_session_accounting(materialized),
         *verify_finality_bound_delivery_authority(materialized),
+        *verify_independent_receipt_finality_binding(materialized),
         *verify_settlement_attribution_outcome(materialized),
         *verify_provider_fulfillment_outcome(materialized),
     ]
@@ -98,6 +100,7 @@ __all__ = [
     "StateEvent",
     "verify_causal_economic_outcome",
     "verify_finality_bound_delivery_authority",
+    "verify_independent_receipt_finality_binding",
     "verify_indeterminate_retry_outcome",
     "verify_multileg_causal_outcome",
     "verify_payment_credential_origin",
