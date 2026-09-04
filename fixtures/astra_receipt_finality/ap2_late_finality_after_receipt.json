@@ -1,0 +1,102 @@
+{
+  "trace_id": "astra-ap2-receipt-late-finality-006",
+  "protocol": "ap2/payment-receipt",
+  "scenario": "A signed AP2 Success receipt claims rail confirmation was verified, but matching authoritative settlement and confirmation evidence appear only after receipt issuance.",
+  "expected_codes": [
+    "RECEIPT_RAIL_CONFIRMATION_EVIDENCE_MISSING",
+    "RECEIPT_RAIL_VERIFICATION_CLAIM_UNSUPPORTED",
+    "RECEIPT_SUCCESS_WITHOUT_VERIFIED_FINALITY",
+    "RECEIPT_VERIFICATION_TIMING_UNPROVEN"
+  ],
+  "expected_verdict": "UNRESOLVED",
+  "events": [
+    {
+      "stage": "POLICY DECISION",
+      "key": "requires_independent_receipt_finality_binding",
+      "value": {
+        "required": true,
+        "success_requires_settled_finality": true,
+        "verified_flag_is_claim_only": true
+      },
+      "source": "astra-receipt-finality-contract",
+      "operation_id": "ap2-payment-006"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_integrity_status",
+      "value": "verified",
+      "source": "independent-jws-verifier",
+      "authoritative": true,
+      "operation_id": "ap2-payment-006",
+      "authorization_id": "mandate-006",
+      "payment_id": "payment-006",
+      "observed_at": "2026-08-17T16:00:00Z"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_status",
+      "value": "Success",
+      "source": "ap2-payment-receipt",
+      "operation_id": "ap2-payment-006",
+      "authorization_id": "mandate-006",
+      "payment_id": "payment-006",
+      "observed_at": "2026-08-17T16:00:00Z"
+    },
+    {
+      "stage": "RECEIPT",
+      "key": "receipt_rail_confirmation",
+      "value": {
+        "psp_confirmation_id": "psp-late-006",
+        "network_confirmation_id": "network-late-006",
+        "rail_confirmation_verified": true
+      },
+      "source": "ap2-payment-receipt",
+      "operation_id": "ap2-payment-006",
+      "authorization_id": "mandate-006",
+      "payment_id": "payment-006",
+      "observed_at": "2026-08-17T16:00:00Z"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "payment_status",
+      "value": "settled",
+      "source": "independent-psp-network-resolver",
+      "authoritative": true,
+      "operation_id": "ap2-payment-006",
+      "authorization_id": "mandate-006",
+      "payment_id": "payment-006",
+      "observed_at": "2026-08-17T16:00:10Z"
+    },
+    {
+      "stage": "ACTUAL SETTLEMENT/FINALITY",
+      "key": "rail_confirmation",
+      "value": {
+        "psp_confirmation_id": "psp-late-006",
+        "network_confirmation_id": "network-late-006"
+      },
+      "source": "independent-psp-network-resolver",
+      "authoritative": true,
+      "operation_id": "ap2-payment-006",
+      "authorization_id": "mandate-006",
+      "payment_id": "payment-006",
+      "observed_at": "2026-08-17T16:00:11Z"
+    },
+    {
+      "stage": "RESOURCE/OUTCOME DELIVERY",
+      "key": "delivery_status",
+      "value": "delivered",
+      "source": "merchant-service",
+      "operation_id": "ap2-payment-006",
+      "payment_id": "payment-006"
+    },
+    {
+      "stage": "RECONCILIATION",
+      "key": "status",
+      "value": "complete",
+      "source": "operation-ledger",
+      "authoritative": true,
+      "operation_id": "ap2-payment-006",
+      "payment_id": "payment-006"
+    }
+  ]
+}
