@@ -1,0 +1,461 @@
+{
+  "schema_version": "agentproof-decisions-pilot-v1",
+  "mode": "prepare",
+  "model": "gpt-6-luna",
+  "question_version": "agentproof-advisory-v1-2026-10-07",
+  "live_evaluated": false,
+  "model_quality_evaluated": false,
+  "dataset_kind": "synthetic-agentproof-mock-provider",
+  "total_cases": 30,
+  "scenario_types": 10,
+  "requests_attempted": 0,
+  "valid_provider_responses": 0,
+  "refused_questions": 0,
+  "statuses": {
+    "not_requested": 30
+  },
+  "authority_unchanged": true,
+  "baseline_receipts_valid": 30,
+  "gold_balance": {
+    "routine": 3,
+    "authorization_gap": 9,
+    "integrity_gap": 9,
+    "replay": 3,
+    "insufficient_evidence": 6
+  },
+  "uncovered_signals": [
+    "untrusted_instruction"
+  ],
+  "metrics": {
+    "review_threshold": null,
+    "threshold_status": "exploratory_uncalibrated",
+    "review_answered": 0,
+    "review_coverage": null,
+    "true_positives": null,
+    "false_positives": null,
+    "true_negatives": null,
+    "false_negatives": null,
+    "review_accuracy": null,
+    "review_recall": null,
+    "signal_answered": 0,
+    "signal_accuracy": null,
+    "severity_answered": 0,
+    "severity_mean_absolute_error": null
+  },
+  "limitations": [
+    "Ten synthetic scenario types with three variants each; not 30 independent production failures.",
+    "Gold labels are authored review rubric labels, not authorization decisions.",
+    "Observed stage statuses are input evidence; the final verdict and gold labels are excluded.",
+    "27 review cases and 3 routine controls; this is not a balanced quality benchmark.",
+    "Receipts contain fresh UUIDs/timestamps; persisted corpus bytes are the replay artifact.",
+    "Scoring cannot modify payment facts, permissions, dispatch, ledger or deterministic receipts.",
+    "Refusals and errors are missing coverage, not routine/safe predictions."
+  ],
+  "results": [
+    {
+      "case_id": "APD-001",
+      "scenario": "happy",
+      "baseline_verdict": "VERIFIED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-002",
+      "scenario": "happy",
+      "baseline_verdict": "VERIFIED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-003",
+      "scenario": "happy",
+      "baseline_verdict": "VERIFIED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-004",
+      "scenario": "stale_policy",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-005",
+      "scenario": "stale_policy",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-006",
+      "scenario": "stale_policy",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-007",
+      "scenario": "expired_grant",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-008",
+      "scenario": "expired_grant",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-009",
+      "scenario": "expired_grant",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-010",
+      "scenario": "amount_drift",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-011",
+      "scenario": "amount_drift",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-012",
+      "scenario": "amount_drift",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-013",
+      "scenario": "vendor_drift",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-014",
+      "scenario": "vendor_drift",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-015",
+      "scenario": "vendor_drift",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-016",
+      "scenario": "currency_drift",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-017",
+      "scenario": "currency_drift",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-018",
+      "scenario": "currency_drift",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-019",
+      "scenario": "replay",
+      "baseline_verdict": "DUPLICATE",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-020",
+      "scenario": "replay",
+      "baseline_verdict": "DUPLICATE",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-021",
+      "scenario": "replay",
+      "baseline_verdict": "DUPLICATE",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-022",
+      "scenario": "accepted_without_settlement",
+      "baseline_verdict": "UNVERIFIED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-023",
+      "scenario": "accepted_without_settlement",
+      "baseline_verdict": "UNVERIFIED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-024",
+      "scenario": "accepted_without_settlement",
+      "baseline_verdict": "UNVERIFIED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-025",
+      "scenario": "unapproved_invoice",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-026",
+      "scenario": "unapproved_invoice",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-027",
+      "scenario": "unapproved_invoice",
+      "baseline_verdict": "BLOCKED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-028",
+      "scenario": "partial_trace",
+      "baseline_verdict": "VERIFIED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-029",
+      "scenario": "partial_trace",
+      "baseline_verdict": "VERIFIED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    },
+    {
+      "case_id": "APD-030",
+      "scenario": "partial_trace",
+      "baseline_verdict": "VERIFIED",
+      "baseline_integrity_valid": true,
+      "baseline_unchanged": true,
+      "advisory": {
+        "status": "not_requested",
+        "advisory_only": true,
+        "answers": []
+      }
+    }
+  ],
+  "created_at": "2026-10-07T11:35:28.233601+00:00",
+  "source_files": {
+    "app/decisions_advisory.py": {
+      "sha256": "8e17a16d9c6feadc532e9a8aa6c658e45a39d4d695ff035b761a200b8df2b9bf",
+      "size_bytes": 9645
+    },
+    "scripts/decisions_corpus.py": {
+      "sha256": "251735d9311e73d9741ee614d08e5d7b5bc1d80f273ced286febb7825c539362",
+      "size_bytes": 6082
+    },
+    "scripts/run_decisions_pilot.py": {
+      "sha256": "de1c20c41b6b1ce29d53519ea55313a9b946a546202d78d433b82e4b46e5e6f8",
+      "size_bytes": 9675
+    },
+    "app/orchestrator.py": {
+      "sha256": "0defed1a05da0052941cf856117e059149b6587696b89dfb68f15d168b2d48b4",
+      "size_bytes": 5855
+    },
+    "app/policy.py": {
+      "sha256": "a8bcf154b42e441f6ba1b26e438e6762f9a10e9bb3d90441032f5f77e6b6bcb9",
+      "size_bytes": 2771
+    },
+    "app/payment_provider.py": {
+      "sha256": "bb741056140ef0c8116c34c8db904876cae517e9679a3e311a951cf9b50a5c11",
+      "size_bytes": 3102
+    },
+    "app/evidence.py": {
+      "sha256": "a34f4c31a30bbe7ea2933c712d16f42ae992b4d474510ec0195e64b9ad22c9ff",
+      "size_bytes": 2169
+    },
+    "app/state.py": {
+      "sha256": "48427ca7c09f990f1874c046d9ed5a14da214508790645d2e4d9e24ddf6d9ec2",
+      "size_bytes": 1786
+    },
+    "app/models.py": {
+      "sha256": "eedba384e04d1ab1b7bf810af7b0342a7e0a81bf61182ad16eef4cb393b346a3",
+      "size_bytes": 1810
+    },
+    "app/planner.py": {
+      "sha256": "2840b15fd317e09f21082036d4f3659bb61c609833c5d14b96d7ab5d138b2347",
+      "size_bytes": 521
+    }
+  },
+  "source_git_head": "5a23a1dac5fa4218c80059d7b80e4b1c319fdb59",
+  "source_worktree_dirty": true
+}

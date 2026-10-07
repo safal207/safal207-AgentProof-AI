@@ -7,3 +7,4 @@ __pycache__/
 coverage.xml
 htmlcov/
 .DS_Store
+artifacts/decisions-pilot/
