@@ -21,3 +21,4 @@ jobs:
       - run: python -m compileall app
       - run: pytest -q
       - run: python scripts/run_astra_fixtures.py
+      - run: python scripts/run_decisions_pilot.py --output /tmp/agentproof-decisions-prepared

@@ -1,0 +1,17 @@
+{
+  "schema_version": "agentproof-decisions-bundle-v1",
+  "files": {
+    "corpus.jsonl": {
+      "sha256": "af444f0bc9756d5a236d932642e4e61d7d78e7f0339fdf6602a70f69eeb3494d",
+      "size_bytes": 89299
+    },
+    "requests.jsonl": {
+      "sha256": "152ba572fe567be0f6a425b67e5e6544b588acdaf46d2ef2d0ad6f30aec662c1",
+      "size_bytes": 113034
+    },
+    "report.json": {
+      "sha256": "a1fa55fb860b12da39e0799434cb03b71c5c66b89ca3c1d5ce92161afe7ba9fa",
+      "size_bytes": 12604
+    }
+  }
+}

@@ -172,6 +172,25 @@ This repository is a deterministic demonstration and conformance harness, not a 
 - The SHA-256 trace digest is an integrity identifier for normalized evidence, not a signature or proof of source authenticity.
 - Production deployment requires durable state, authenticated evidence sources, secret management, and provider-specific adapters.
 
+## Decisions advisory pilot
+
+An optional offline-first pilot scores synthetic AgentProof evidence with the
+OpenAI Decisions API. It is separate from the payment runtime: scores never
+authorize actions, change payment facts, or replace deterministic receipts.
+
+```bash
+python scripts/run_decisions_pilot.py
+```
+
+The default command makes no network requests and does not read API credentials.
+It prepares 30 cases from 10 existing mock-runtime scenarios, plus request
+projections, a report and a SHA-256 manifest. Live scoring requires explicit
+`--live` and a securely configured API credential. Preparation and mocked
+contract tests do not establish model accuracy.
+
+See [`docs/decisions-advisory-pilot.md`](docs/decisions-advisory-pilot.md) for the
+rubric, evidence boundary, commands and current validation status.
+
 ## License
 
 Apache-2.0

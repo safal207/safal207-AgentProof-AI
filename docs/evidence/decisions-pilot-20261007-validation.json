@@ -1,0 +1,49 @@
+{
+  "checked_at": "2026-10-07T11:36:04.122768+00:00",
+  "base_commit": "5a23a1dac5fa4218c80059d7b80e4b1c319fdb59",
+  "python": "3.12",
+  "checks": {
+    "python3 -m pytest -q": {
+      "exit_code": 0,
+      "passed": 331,
+      "warnings": 1,
+      "duration_seconds": 1.64
+    },
+    "python3 -m compileall -q app scripts": {
+      "exit_code": 0
+    },
+    "git diff --check": {
+      "exit_code": 0
+    },
+    "python3 scripts/run_astra_fixtures.py": {
+      "exit_code": 0,
+      "all_cases_passed": true
+    },
+    "prepared_bundle_integrity": {
+      "all_file_sizes_and_sha256_match": true,
+      "source_hashes_match": true
+    }
+  },
+  "new_tests": {
+    "adapter_contracts": 94,
+    "corpus_checks": 6,
+    "runner_checks": 10
+  },
+  "prepared_cases": 30,
+  "live_evaluated": false,
+  "model_quality_evaluated": false,
+  "api_requests_sent": 0,
+  "live_blocker": "OPENAI_API_KEY absent; trusted Codex API-key setup skill is not installed in this session",
+  "review_findings_resolved": [
+    "oversized numeric overflow",
+    "output reservation before paid API",
+    "valid provider response counter naming"
+  ],
+  "bundle_manifest_sha256": "e25982873999ed582a6b4dcbadc18b6f4ec151f9bf403d358ce93a58e4db7617",
+  "ci_status": "not_yet_pushed",
+  "limitations": [
+    "Synthetic fixtures, no captured Agent Arena sessions",
+    "No measurement of Decisions accuracy",
+    "27 review cases and 3 routine controls"
+  ]
+}
